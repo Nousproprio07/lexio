@@ -1,0 +1,95 @@
+import { RefreshCw, WifiOff } from 'lucide-react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { Layout, Logo } from './components/Layout'
+import { WordDialogsProvider } from './components/WordDialogs'
+import { Spinner } from './components/ui'
+import { AuthPage, NewPasswordPage } from './pages/Auth'
+import { DictionaryPage } from './pages/Dictionary'
+import { HomePage } from './pages/Home'
+import { ProgressPage } from './pages/Progress'
+import { QuizPlayPage } from './pages/QuizPlay'
+import { QuizResultPage } from './pages/QuizResult'
+import { QuizSetupPage } from './pages/QuizSetup'
+import { SettingsPage } from './pages/Settings'
+import { AuthProvider, useAuth } from './state/auth'
+import { DataProvider, useData } from './state/data'
+import { QuizProvider } from './state/quiz'
+import { ToastProvider } from './state/toast'
+
+function FullScreenLoader() {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4" role="status">
+      <Logo />
+      <Spinner className="size-5 text-brand" />
+      <span className="sr-only">Chargement…</span>
+    </div>
+  )
+}
+
+function DataGate() {
+  const { loading, error, reload } = useData()
+  if (loading) return <FullScreenLoader />
+  if (error)
+    return (
+      <div className="flex min-h-dvh items-center justify-center px-4">
+        <div className="card max-w-sm p-6 text-center">
+          <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-slate-100 text-muted">
+            <WifiOff className="size-6" aria-hidden />
+          </div>
+          <h1 className="text-lg font-semibold">Impossible de charger vos mots</h1>
+          <p className="mt-1.5 text-[15px] text-muted">
+            {navigator.onLine ? 'Le serveur ne répond pas pour le moment.' : 'Vous semblez hors ligne.'} Vos données sont en sécurité : réessayez dans un instant.
+          </p>
+          <p className="mt-2 text-xs break-words text-slate-400">{error}</p>
+          <button type="button" className="btn-primary mt-5" onClick={reload}>
+            <RefreshCw className="size-4.5" aria-hidden />
+            Réessayer
+          </button>
+        </div>
+      </div>
+    )
+
+  return (
+    <QuizProvider>
+      <WordDialogsProvider>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<HomePage />} />
+            <Route path="dictionnaire" element={<DictionaryPage />} />
+            <Route path="quiz" element={<QuizSetupPage />} />
+            <Route path="quiz/session" element={<QuizPlayPage />} />
+            <Route path="quiz/resultat" element={<QuizResultPage />} />
+            <Route path="progression" element={<ProgressPage />} />
+            <Route path="reglages" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+      </WordDialogsProvider>
+    </QuizProvider>
+  )
+}
+
+function Gate() {
+  const { state } = useAuth()
+  if (state.status === 'loading') return <FullScreenLoader />
+  if (state.status === 'signedOut') return <AuthPage />
+  if (state.status === 'recovery') return <NewPasswordPage />
+  // la clé remonte tout l'état quand on change de compte ou de mode
+  return (
+    <DataProvider key={state.scope} repo={state.repo} scope={state.scope}>
+      <DataGate />
+    </DataProvider>
+  )
+}
+
+export function App() {
+  return (
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+      <ToastProvider>
+        <AuthProvider>
+          <Gate />
+        </AuthProvider>
+      </ToastProvider>
+    </BrowserRouter>
+  )
+}
