@@ -5,17 +5,15 @@ import { useWordDialogs } from '../components/WordDialogs'
 import { EmptyState, plural } from '../components/ui'
 import { useData } from '../state/data'
 import { SMART_REVIEW, useQuiz } from '../state/quiz'
-import { useLastBackup } from '../state/settings'
 import { useStats } from '../state/stats'
 
 export function HomePage() {
-  const { words } = useData()
+  const { words, lastBackup } = useData()
   const stats = useStats()
   const { openNew } = useWordDialogs()
   const { run, start } = useQuiz()
   const navigate = useNavigate()
   const activeRun = run && !run.finishedAt ? run : null
-  const [lastBackup] = useLastBackup()
   const backupDue = words.length >= 10 && (!lastBackup || Date.now() - new Date(lastBackup).getTime() > 30 * 86_400_000)
 
   const reviewNow = () => {

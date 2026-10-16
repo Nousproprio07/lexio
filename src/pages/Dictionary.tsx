@@ -10,26 +10,26 @@ type Sort = 'recent' | 'oldest' | 'az' | 'za'
 const PAGE = 60
 const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true })
 
-const FILTERS_KEY = 'lexio:dictionary-filters'
+const filtersKey = (scope: string) => `lexio:dictionary-filters:${scope}`
 interface Filters {
   sort: Sort
   category: string // '' = toutes, '__none' = sans catégorie, sinon id
   status: Status | ''
 }
 
-function loadFilters(): Filters {
+function loadFilters(scope: string): Filters {
   try {
-    return { sort: 'recent', category: '', status: '', ...JSON.parse(sessionStorage.getItem(FILTERS_KEY) ?? '{}') }
+    return { sort: 'recent', category: '', status: '', ...JSON.parse(sessionStorage.getItem(filtersKey(scope)) ?? '{}') }
   } catch {
     return { sort: 'recent', category: '', status: '' }
   }
 }
 
 export function DictionaryPage() {
-  const { words, categories, progress, categoryName } = useData()
+  const { words, categories, progress, categoryName, scope } = useData()
   const { openNew, openDetail, openEdit, requestDelete } = useWordDialogs()
   const [query, setQuery] = useState('')
-  const [filters, setFilters] = useState<Filters>(loadFilters)
+  const [filters, setFilters] = useState<Filters>(() => loadFilters(scope))
   const [limit, setLimit] = useState(PAGE)
   const deferredQuery = useDeferredValue(query)
   // catégorie mémorisée puis supprimée : retour à « toutes »
@@ -40,11 +40,11 @@ export function DictionaryPage() {
 
   useEffect(() => {
     try {
-      sessionStorage.setItem(FILTERS_KEY, JSON.stringify(filters))
+      sessionStorage.setItem(filtersKey(scope), JSON.stringify(filters))
     } catch {
       /* ignoré */
     }
-  }, [filters])
+  }, [filters, scope])
 
   // index de recherche calculé une fois par version du dictionnaire
   const index = useMemo(

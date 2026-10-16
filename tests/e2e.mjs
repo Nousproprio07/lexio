@@ -39,7 +39,22 @@ async function run(label, contextOptions) {
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
   const shot = (name) => page.screenshot({ path: `${OUT}/${label}-${name}.png`, fullPage: true })
 
+  // --- espace protégé par un code ----------------------------------------------
   await page.goto(BASE)
+  await page.getByRole('heading', { name: 'Votre espace Lexio' }).waitFor()
+  await shot('00-code')
+  await page.getByLabel('Code d’accès').fill('soleil42')
+  await page.getByRole('button', { name: 'Ouvrir mon espace' }).click()
+  await page.getByText('Aucun espace ne correspond à ce code').waitFor()
+  check(true, 'code inconnu refusé')
+  await page.getByRole('button', { name: 'Créer un nouvel espace' }).click()
+  await page.getByLabel('Nouveau code').fill('soleil42')
+  await page.getByLabel('Confirmez le code').fill('soleil43')
+  await page.getByRole('button', { name: 'Créer mon espace' }).click()
+  check(await page.getByText('Les deux codes ne sont pas identiques.').isVisible(), 'confirmation du code vérifiée')
+  await page.getByLabel('Confirmez le code').fill('soleil42')
+  await shot('00-creation')
+  await page.getByRole('button', { name: 'Créer mon espace' }).click()
   await page.getByText('Un mot de plus, chaque jour.').first().waitFor()
   check(await page.getByText('Votre dictionnaire vous attend').isVisible(), 'accueil vide accueillant')
   await shot('01-accueil-vide')
@@ -77,8 +92,10 @@ async function run(label, contextOptions) {
   check((await page.locator('dl').first().innerText()).includes('5'), 'mots conservés après rechargement')
   const page2 = await ctx.newPage()
   await page2.goto(`${BASE}/dictionnaire`)
+  await page2.getByLabel('Code d’accès').fill('soleil42')
+  await page2.getByRole('button', { name: 'Ouvrir mon espace' }).click()
   await page2.getByRole('heading', { name: 'Mon dictionnaire' }).waitFor()
-  check((await page2.locator('main li article').count()) === 5, 'mots retrouvés dans un nouvel onglet')
+  check((await page2.locator('main li article').count()) === 5, 'mots retrouvés dans un nouvel onglet avec le code')
   await page2.close()
   await shot('03-accueil')
 
@@ -186,6 +203,36 @@ async function run(label, contextOptions) {
   await page.getByRole('dialog').getByRole('button', { name: 'Supprimer' }).click()
   await page.getByText('« Sérendipité » supprimé').waitFor()
   check((await page.locator('main li article').count()) === 4, 'suppression avec confirmation')
+
+  // --- verrouillage et second espace -------------------------------------------
+  const stored = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const req = indexedDB.open('lexio')
+        req.onsuccess = () => {
+          const all = req.result.transaction('kv').objectStore('kv').getAll()
+          all.onsuccess = () => resolve(JSON.stringify(all.result, (_, v) => (v instanceof ArrayBuffer ? new TextDecoder().decode(v) : v)))
+        }
+      }),
+  )
+  check(!stored.includes('Résilience') && !stored.includes('Inflation'), 'mots illisibles dans le stockage (chiffrés)')
+  await page.goto(`${BASE}/reglages`)
+  await page.getByRole('button', { name: 'Verrouiller l’espace' }).click()
+  await page.getByRole('heading', { name: 'Votre espace Lexio' }).waitFor()
+  await page.reload()
+  check(await page.getByRole('heading', { name: 'Votre espace Lexio' }).isVisible(), 'code redemandé après verrouillage')
+  await page.getByRole('button', { name: 'Créer un nouvel espace' }).click()
+  await page.getByLabel('Nouveau code').fill('lune')
+  await page.getByLabel('Confirmez le code').fill('lune')
+  await page.getByRole('button', { name: 'Créer mon espace' }).click()
+  await page.getByText('Votre dictionnaire vous attend').waitFor()
+  check(true, 'un autre code ouvre un espace vide et séparé')
+  await page.goto(`${BASE}/reglages`)
+  await page.getByRole('button', { name: 'Verrouiller l’espace' }).click()
+  await page.getByLabel('Code d’accès').fill('soleil42')
+  await page.getByRole('button', { name: 'Ouvrir mon espace' }).click()
+  await page.getByText('Mots enregistrés').waitFor()
+  check((await page.locator('dl').first().innerText()).includes('4'), 'le premier code rouvre ses 4 mots')
 
   // débordement horizontal
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)

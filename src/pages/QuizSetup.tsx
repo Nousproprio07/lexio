@@ -10,12 +10,12 @@ import { useData } from '../state/data'
 import { useQuiz, type RunConfig } from '../state/quiz'
 import { useIgnoreAccents } from '../state/settings'
 
-const CONFIG_KEY = 'lexio:quiz-config'
+const configKey = (scope: string) => `lexio:quiz-config:${scope}`
 const DEFAULT_CONFIG: RunConfig = { mode: 'mixed', size: 10, filters: { categoryId: null, onlyUnmastered: false, smart: false } }
 
-function loadConfig(): RunConfig {
+function loadConfig(scope: string): RunConfig {
   try {
-    const c = JSON.parse(localStorage.getItem(CONFIG_KEY) ?? 'null') as RunConfig | null
+    const c = JSON.parse(localStorage.getItem(configKey(scope)) ?? 'null') as RunConfig | null
     return c ? { ...DEFAULT_CONFIG, ...c, filters: { ...DEFAULT_CONFIG.filters, ...c.filters } } : DEFAULT_CONFIG
   } catch {
     return DEFAULT_CONFIG
@@ -36,12 +36,12 @@ const SIZES: { value: SessionSize; label: string }[] = [
 ]
 
 export function QuizSetupPage() {
-  const { words, categories, progress } = useData()
+  const { words, categories, progress, scope } = useData()
   const { run, start, abandon } = useQuiz()
   const { openNew } = useWordDialogs()
   const navigate = useNavigate()
   const [ignoreAccents, setIgnoreAccents] = useIgnoreAccents()
-  const [config, setConfig] = useState<RunConfig>(loadConfig)
+  const [config, setConfig] = useState<RunConfig>(() => loadConfig(scope))
   const [error, setError] = useState<string | null>(null)
 
   // catégorie mémorisée mais supprimée depuis
@@ -69,7 +69,7 @@ export function QuizSetupPage() {
 
   const launch = () => {
     try {
-      localStorage.setItem(CONFIG_KEY, JSON.stringify(effective))
+      localStorage.setItem(configKey(scope), JSON.stringify(effective))
     } catch {
       /* ignoré */
     }

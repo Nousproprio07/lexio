@@ -3,7 +3,7 @@
 **Un mot de plus, chaque jour.** Lexio est votre dictionnaire personnel. Vous notez un mot et sa définition, et l'application en fait automatiquement des quiz à répétition espacée.
 
 - React 19 + TypeScript, Vite, Tailwind CSS 4, Lucide
-- **Aucune base de données ni compte** : tout est stocké sur l'appareil (IndexedDB)
+- **Aucune base de données ni serveur** : tout est stocké sur l'appareil (IndexedDB), chiffré par un code d'accès
 - Aucune IA, aucun service tiers
 
 En ligne : https://nousproprio07.github.io/lexio/
@@ -30,9 +30,19 @@ Pour `e2e` et `icons`, Playwright a besoin d'un Chromium : lancez `npx playwrigh
 
 ---
 
-## 2. Où sont mes mots ?
+## 2. Code d'accès
 
-Tout reste **dans le navigateur de l'appareil**, dans IndexedDB : aucun serveur, aucun compte. Les données survivent aux rechargements, à la fermeture du navigateur et aux redéploiements du site. En revanche :
+À l'ouverture, Lexio demande un **code d'accès** (4 caractères minimum, majuscules et minuscules comptent). Chaque code ouvre son propre espace : ses mots, ses catégories, sa progression. Un autre code ouvre un autre espace, vide au départ.
+
+- Le code n'est **enregistré nulle part**. Il sert à dériver (PBKDF2-SHA-256) l'identifiant de l'espace et une clé AES-GCM qui chiffre son contenu (`src/data/space.ts`). Sans le code, les données stockées sont illisibles.
+- **Code oublié = espace perdu.** Personne ne peut le retrouver : d'où l'intérêt de la sauvegarde JSON.
+- Le code est redemandé à chaque nouvel onglet ou nouvelle ouverture de l'application, et après **Verrouiller** (en-tête, barre latérale ou Réglages). Un simple rechargement de la page ne le redemande pas.
+- **Le code ne vaut que sur l'appareil où l'espace a été créé** : il n'y a pas de serveur, donc pas de compte accessible ailleurs.
+- Les mots saisis avant l'arrivée des codes sont rangés automatiquement dans le premier espace créé.
+
+## 3. Où sont mes mots ?
+
+Tout reste **dans le navigateur de l'appareil**, dans IndexedDB : aucun serveur. Les données survivent aux rechargements, à la fermeture du navigateur et aux redéploiements du site. En revanche :
 
 - **Pas de synchronisation** : les mots saisis sur le téléphone ne sont pas sur l'ordinateur, et inversement. Pour transférer, exportez en JSON puis importez sur l'autre appareil.
 - **iPhone** : ajoutez Lexio à l'écran d'accueil (Safari → *Partager* → **Sur l'écran d'accueil**). Sans cela, Safari peut effacer les données d'un site non visité pendant 7 jours.
@@ -45,7 +55,7 @@ L'application demande aussi au navigateur un stockage « persistant » (`navigat
 
 ---
 
-## 3. Déployer
+## 4. Déployer
 
 C'est un site statique : le build produit `dist/`.
 
@@ -56,7 +66,7 @@ C'est un site statique : le build produit `dist/`.
 
 ---
 
-## 4. Fonctionnement
+## 5. Fonctionnement
 
 ### Répétition espacée (`src/lib/srs.ts`)
 C'est une variante déterministe et simplifiée de SM-2, avec des réponses binaires :
@@ -82,19 +92,19 @@ C'est une variante déterministe et simplifiée de SM-2, avec des réponses bina
 
 ---
 
-## 5. Compatibilité
+## 6. Compatibilité
 Safari iOS / macOS 15.4 et plus, Chrome, Firefox et Edge récents. L'application respecte la préférence « réduire les animations », se navigue entièrement au clavier et garde des contrastes AA.
 
 **Raccourcis du quiz** : `Entrée` pour valider ou passer à la question suivante. `1` à `4` (ou `A` à `D`) pour choisir une définition. `1` / `2` pour « Je savais » / « À revoir ». `Ctrl/⌘ + Entrée` enregistre un mot depuis le champ définition.
 
-## 6. Structure
+## 7. Structure
 
 ```
 src/
   lib/         logique pure et testée : srs, quiz, normalize, transfer, types
-  data/        stockage local (IndexedDB) et interface du dépôt
+  data/        stockage local (IndexedDB), espaces chiffrés par code, interface du dépôt
   state/       contextes React : données, session de quiz, notifications, réglages
   components/  mise en page, dialogues de mot, composants d'interface
-  pages/       Accueil, Dictionnaire, Quiz (réglages, session, résultats), Progression, Réglages
+  pages/       Code d'accès, Accueil, Dictionnaire, Quiz (réglages, session, résultats), Progression, Réglages
 tests/         tests unitaires et parcours e2e
 ```

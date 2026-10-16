@@ -23,7 +23,13 @@ interface DataApi {
   repo: LocalRepository
   /** Faux si le navigateur refuse le stockage durable (données perdues à la fermeture). */
   persistent: boolean
+  /** Identifiant de l'espace ouvert : sépare les préférences locales de chaque espace. */
   scope: string
+  /** Referme l'espace et revient à l'écran du code d'accès. */
+  lock(): void
+  /** Date du dernier export JSON de cet espace (rappel de sauvegarde). */
+  lastBackup: string | null
+  markBackup(): void
   loading: boolean
   error: string | null
   reload(): void
@@ -46,8 +52,8 @@ interface DataApi {
 
 const DataContext = createContext<DataApi | null>(null)
 
-export function DataProvider({ repo, children }: { repo: LocalRepository; children: ReactNode }) {
-  const scope = 'local'
+export function DataProvider({ repo, onLock, children }: { repo: LocalRepository; onLock(): void; children: ReactNode }) {
+  const scope = repo.spaceId
   const notify = useToast()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +62,7 @@ export function DataProvider({ repo, children }: { repo: LocalRepository; childr
   const [progress, setProgress] = useState<Map<string, WordProgress>>(new Map())
   const [sessions, setSessions] = useState<QuizSession[]>([])
   const [reloadKey, setReloadKey] = useState(0)
+  const [lastBackup, setLastBackup] = useState(() => repo.getPref<string>('lastBackupAt') ?? null)
 
   // un autre onglet a modifié les données : on les relit sans écran de chargement
   useEffect(
@@ -67,6 +74,7 @@ export function DataProvider({ repo, children }: { repo: LocalRepository; childr
         setWords(snap.words)
         setProgress(new Map(snap.progress.map((p) => [p.wordId, p])))
         setSessions(snap.sessions)
+        setLastBackup(repo.getPref<string>('lastBackupAt') ?? null)
       }),
     [repo],
   )
@@ -216,6 +224,17 @@ export function DataProvider({ repo, children }: { repo: LocalRepository; childr
     [repo, ensureCategory],
   )
 
+  const lock = useCallback(() => {
+    repo.lock()
+    onLock()
+  }, [repo, onLock])
+
+  const markBackup = useCallback(() => {
+    const at = new Date().toISOString()
+    setLastBackup(at)
+    void repo.setPref('lastBackupAt', at).catch(() => {})
+  }, [repo])
+
   const recordQuiz = useCallback(
     (ops: QuizWrite[]) => {
       for (const op of ops) {
@@ -248,6 +267,9 @@ export function DataProvider({ repo, children }: { repo: LocalRepository; childr
     repo,
     persistent: repo.persistent,
     scope,
+    lock,
+    lastBackup,
+    markBackup,
     loading,
     error,
     reload,

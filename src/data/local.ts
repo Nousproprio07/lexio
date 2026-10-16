@@ -1,9 +1,10 @@
 /**
  * Stockage de Lexio : tout reste sur l'appareil, dans IndexedDB.
  *
- * Le dictionnaire entier est gardé en mémoire et réécrit à chaque
- * modification (une seule écriture IndexedDB à la fois, dans l'ordre). Même
- * avec plusieurs milliers de mots, cela reste instantané.
+ * Chaque espace est ouvert par un code d'accès (voir space.ts) et rangé chiffré
+ * sous la clé `space:<identifiant>`. Le contenu de l'espace ouvert est gardé en
+ * mémoire et réécrit à chaque modification (une seule écriture à la fois, dans
+ * l'ordre). Même avec plusieurs milliers de mots, cela reste instantané.
  *
  * Si IndexedDB est indisponible (navigation privée sur d'anciens navigateurs),
  * l'application fonctionne en mémoire et le signale : `persistent === false`.
@@ -11,19 +12,36 @@
 import type { Category, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
 import { textKey } from '../lib/normalize'
 import { DuplicateError, uuid, type Repository, type Snapshot, type WordInput } from './repository'
+import { deriveSpaceKey, fromHex, importSpaceKey, open, seal, toHex, type Sealed, type SpaceKey } from './space'
 
 const DB_NAME = 'lexio'
 const STORE = 'kv'
-const KEY = 'db'
-/** Ancien stockage du mode démonstration, migré une fois au premier lancement. */
+const SPACE_PREFIX = 'space:'
+/** Dictionnaire d'avant les codes d'accès (non chiffré), rattaché au premier espace créé. */
+const UNCLAIMED_KEY = 'db'
+/** Ancien stockage du mode démonstration (localStorage), rattaché de la même façon. */
 const LEGACY_KEY = 'lexio-demo:v1'
+const LEGACY_EXTRA = ['lexio:demo', 'lexio:quiz:demo', 'lexio:outbox:demo', 'lexio:quiz:local', 'lexio:lastBackupAt']
+/** Espace ouvert dans cet onglet : le code est redemandé à la fermeture de l'onglet. */
+const SESSION_KEY = 'lexio:espace'
 
 interface LocalDb extends Snapshot {
   version: 1
   answers: QuizAnswer[]
+  /** Préférences propres à l'espace (session de quiz en cours, date de sauvegarde…). */
+  prefs: Record<string, unknown>
 }
 
-const empty = (): LocalDb => ({ version: 1, categories: [], words: [], progress: [], sessions: [], answers: [] })
+const empty = (): LocalDb => ({ version: 1, categories: [], words: [], progress: [], sessions: [], answers: [], prefs: {} })
+
+// --- accès clé/valeur : IndexedDB, ou mémoire en repli ------------------------
+
+interface Kv {
+  persistent: boolean
+  get<T>(key: string): Promise<T | undefined>
+  put(key: string, value: unknown): Promise<void>
+  del(key: string): Promise<void>
+}
 
 function openIdb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -45,76 +63,180 @@ function tx<T>(idb: IDBDatabase, mode: IDBTransactionMode, run: (s: IDBObjectSto
   })
 }
 
-/** Prévient les autres onglets ouverts qu'ils doivent relire les données. */
+let kvPromise: Promise<Kv> | null = null
+
+function kv(): Promise<Kv> {
+  kvPromise ??= openIdb().then(
+    (idb): Kv => ({
+      persistent: true,
+      get: (k) => tx(idb, 'readonly', (s) => s.get(k)),
+      put: async (k, v) => void (await tx(idb, 'readwrite', (s) => s.put(v, k))),
+      del: async (k) => void (await tx(idb, 'readwrite', (s) => s.delete(k))),
+    }),
+    (): Kv => {
+      const mem = new Map<string, unknown>()
+      return {
+        persistent: false,
+        get: async <T>(k: string) => mem.get(k) as T | undefined,
+        put: async (k, v) => void mem.set(k, v),
+        del: async (k) => void mem.delete(k),
+      }
+    },
+  )
+  return kvPromise
+}
+
+/** Prévient les autres onglets ouverts sur le même espace qu'ils doivent relire les données. */
 const channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('lexio') : null
+
+function readLegacy(): Partial<LocalDb> | null {
+  try {
+    const raw = localStorage.getItem(LEGACY_KEY)
+    return raw ? (JSON.parse(raw) as Partial<LocalDb>) : null
+  } catch {
+    return null
+  }
+}
+
+async function readUnclaimed(store: Kv): Promise<Partial<LocalDb> | null> {
+  const stored = await store.get<Partial<LocalDb>>(UNCLAIMED_KEY).catch(() => undefined)
+  return stored?.words?.length ? stored : readLegacy()
+}
+
+function rememberSession(space: SpaceKey | null) {
+  try {
+    if (space) sessionStorage.setItem(SESSION_KEY, toHex(space.raw))
+    else sessionStorage.removeItem(SESSION_KEY)
+  } catch {
+    /* le code sera simplement redemandé au rechargement */
+  }
+}
+
+export type UnlockResult = { ok: true; repo: LocalRepository } | { ok: false; reason: 'not-found' }
 
 export class LocalRepository implements Repository {
   private writing: Promise<void> = Promise.resolve()
 
   private constructor(
-    private idb: IDBDatabase | null,
+    private store: Kv,
+    private space: SpaceKey,
     private db: LocalDb,
   ) {}
 
   get persistent() {
-    return this.idb !== null
+    return this.store.persistent
   }
 
-  static async open(): Promise<LocalRepository> {
-    let idb: IDBDatabase | null = null
-    let db = empty()
-    try {
-      idb = await openIdb()
-      const stored = await tx<LocalDb | undefined>(idb, 'readonly', (s) => s.get(KEY))
-      if (stored) db = { ...empty(), ...stored }
-    } catch {
-      idb = null
+  /** Identifiant de l'espace ouvert (sert aussi à séparer les préférences locales). */
+  get spaceId() {
+    return this.space.id
+  }
+
+  /** Nombre de mots enregistrés avant les codes d'accès, qui rejoindront le premier espace créé. */
+  static async unclaimedWordCount(): Promise<number> {
+    return (await readUnclaimed(await kv()))?.words?.length ?? 0
+  }
+
+  /** Ouvre l'espace correspondant au code ; avec `create`, le crée s'il n'existe pas. */
+  static async unlock(code: string, { create = false } = {}): Promise<UnlockResult> {
+    const store = await kv()
+    const space = await deriveSpaceKey(code)
+    const repo = await LocalRepository.load(store, space)
+    if (repo) {
+      rememberSession(space)
+      return { ok: true, repo }
     }
-    const repo = new LocalRepository(idb, db)
-    if (db.words.length === 0) await repo.migrateLegacy()
+    if (!create) return { ok: false, reason: 'not-found' }
+
+    const unclaimed = await readUnclaimed(store)
+    const created = new LocalRepository(store, space, { ...empty(), ...unclaimed, prefs: {}, version: 1 })
+    await created.save()
+    if (unclaimed) {
+      await store.del(UNCLAIMED_KEY).catch(() => {})
+      try {
+        for (const k of [LEGACY_KEY, ...LEGACY_EXTRA]) localStorage.removeItem(k)
+      } catch {
+        /* ignoré */
+      }
+    }
     // demande au navigateur de ne pas effacer ces données en cas de manque d'espace
     void navigator.storage?.persist?.().catch(() => false)
-    return repo
+    rememberSession(space)
+    return { ok: true, repo: created }
   }
 
-  private async migrateLegacy() {
+  /** Rouvre l'espace déjà déverrouillé dans cet onglet (rechargement de la page). */
+  static async resume(): Promise<LocalRepository | null> {
+    let saved: string | null = null
     try {
-      const raw = localStorage.getItem(LEGACY_KEY)
-      if (!raw) return
-      this.db = { ...empty(), ...(JSON.parse(raw) as Partial<LocalDb>), version: 1 }
-      await this.save()
-      if (this.idb) for (const k of [LEGACY_KEY, 'lexio:demo', 'lexio:quiz:demo', 'lexio:outbox:demo']) localStorage.removeItem(k)
+      saved = sessionStorage.getItem(SESSION_KEY)
     } catch {
-      /* migration impossible : l'ancien stockage est laissé intact */
+      return null
+    }
+    if (!saved || !/^[0-9a-f]{96}$/.test(saved)) return null
+    try {
+      const repo = await LocalRepository.load(await kv(), await importSpaceKey(fromHex(saved)))
+      if (!repo) rememberSession(null)
+      return repo
+    } catch {
+      rememberSession(null)
+      return null
     }
   }
 
-  /** Relit IndexedDB (après une modification faite dans un autre onglet). */
+  private static async load(store: Kv, space: SpaceKey): Promise<LocalRepository | null> {
+    const sealed = await store.get<Sealed>(SPACE_PREFIX + space.id)
+    if (!sealed) return null
+    const db = await open<LocalDb>(space, sealed).catch(() => {
+      throw new Error('Le contenu de cet espace est illisible (données endommagées).')
+    })
+    return new LocalRepository(store, space, { ...empty(), ...db })
+  }
+
+  /** Referme l'espace : le code sera redemandé. */
+  lock() {
+    rememberSession(null)
+  }
+
+  /** Relit le stockage (après une modification faite dans un autre onglet). */
   async refresh(): Promise<void> {
-    if (!this.idb) return
     await this.writing
-    const stored = await tx<LocalDb | undefined>(this.idb, 'readonly', (s) => s.get(KEY))
-    this.db = stored ? { ...empty(), ...stored } : empty()
+    const fresh = await LocalRepository.load(this.store, this.space)
+    if (fresh) this.db = fresh.db
   }
 
   onExternalChange(fn: () => void): () => void {
     if (!channel) return () => {}
-    const handler = () => fn()
+    const handler = (e: MessageEvent) => {
+      if ((e.data as { space?: string } | null)?.space === this.space.id) fn()
+    }
     channel.addEventListener('message', handler)
     return () => channel.removeEventListener('message', handler)
   }
 
-  /** Écritures sérialisées ; IndexedDB copie l'objet au moment de l'appel. */
+  /** Écritures sérialisées ; l'instantané est figé au moment de l'appel (jamais modifié en place). */
   private save(): Promise<void> {
-    const idb = this.idb
-    if (!idb) return Promise.resolve()
     const snapshot = this.db
-    const next = this.writing.catch(() => {}).then(async () => {
-      await tx(idb, 'readwrite', (s) => s.put(snapshot, KEY))
-      channel?.postMessage('changed')
-    })
+    const next = this.writing
+      .catch(() => {})
+      .then(async () => {
+        await this.store.put(SPACE_PREFIX + this.space.id, await seal(this.space, snapshot))
+        channel?.postMessage({ space: this.space.id })
+      })
     this.writing = next
     return next
+  }
+
+  getPref<T>(key: string): T | undefined {
+    return this.db.prefs[key] as T | undefined
+  }
+
+  async setPref(key: string, value: unknown): Promise<void> {
+    const prefs = { ...this.db.prefs }
+    if (value === undefined) delete prefs[key]
+    else prefs[key] = value
+    this.db = { ...this.db, prefs }
+    await this.save()
   }
 
   private assertUnique(input: WordInput, ignoreId?: string, words = this.db.words) {
@@ -127,7 +249,6 @@ export class LocalRepository implements Repository {
     const { categories, words, progress, sessions } = structuredClone(this.db)
     return { categories, words, progress, sessions }
   }
-
   async createCategory(name: string): Promise<Category> {
     if (this.db.categories.some((c) => textKey(c.name) === textKey(name))) throw new DuplicateError()
     const c = { id: uuid(), name, createdAt: new Date().toISOString() }

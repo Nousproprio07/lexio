@@ -55,29 +55,21 @@ interface QuizApi {
 
 const QuizContext = createContext<QuizApi | null>(null)
 
-function loadRun(key: string): QuizRun | null {
-  try {
-    const run = JSON.parse(localStorage.getItem(key) ?? 'null') as QuizRun | null
-    return run?.version === 1 ? run : null
-  } catch {
-    return null
-  }
-}
+const RUN_PREF = 'quizRun'
 
 export function QuizProvider({ children }: { children: ReactNode }) {
-  const { scope, words, wordById, progress, categoryName, recordQuiz } = useData()
-  const storageKey = `lexio:quiz:${scope}`
-  const [run, setRun] = useState<QuizRun | null>(() => loadRun(storageKey))
+  const { repo, words, wordById, progress, categoryName, recordQuiz } = useData()
+  const [run, setRun] = useState<QuizRun | null>(() => {
+    const saved = repo.getPref<QuizRun>(RUN_PREF)
+    return saved?.version === 1 ? saved : null
+  })
 
-  // conservation de la session en cours (changement de page, rechargement, fermeture)
+  // conservation de la session en cours, chiffrée avec l'espace (changement de page, rechargement, fermeture)
   useEffect(() => {
-    try {
-      if (run) localStorage.setItem(storageKey, JSON.stringify(run))
-      else localStorage.removeItem(storageKey)
-    } catch {
+    void repo.setPref(RUN_PREF, run ?? undefined).catch(() => {
       /* stockage indisponible : la session reste en mémoire */
-    }
-  }, [run, storageKey])
+    })
+  }, [run, repo])
 
   const sessionRow = (r: QuizRun): QuizSession => {
     const score = computeScore(r.results)

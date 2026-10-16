@@ -1,11 +1,11 @@
-import { Check, Download, FileJson, FileSpreadsheet, HardDrive, Pencil, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
+import { Check, Download, FileJson, FileSpreadsheet, HardDrive, LockKeyhole, Pencil, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessage } from '../components/WordDialogs'
 import { ConfirmDialog, Modal, PageHeader, plural, Spinner, Toggle } from '../components/ui'
 import { dedupeImport, parseCsvImport, parseJsonImport, toCsv, toJsonExport, wordKey, type ImportParseResult, type ImportRow } from '../lib/transfer'
 import type { Category } from '../lib/types'
 import { useData } from '../state/data'
-import { useIgnoreAccents, useLastBackup } from '../state/settings'
+import { useIgnoreAccents } from '../state/settings'
 import { useToast } from '../state/toast'
 
 function download(name: string, content: string, type: string) {
@@ -22,9 +22,8 @@ function download(name: string, content: string, type: string) {
 const stamp = () => new Date().toISOString().slice(0, 10)
 
 export function SettingsPage() {
-  const { words, categories, progress, categoryName, persistent } = useData()
+  const { words, categories, progress, categoryName, persistent, lastBackup, markBackup, lock } = useData()
   const [ignoreAccents, setIgnoreAccents] = useIgnoreAccents()
-  const [lastBackup, markBackup] = useLastBackup()
   const notify = useToast()
   const [protectedStorage, setProtectedStorage] = useState<boolean | null>(null)
 
@@ -51,8 +50,15 @@ export function SettingsPage() {
           <li className="flex gap-3">
             <HardDrive className="mt-0.5 size-5 shrink-0 text-brand" aria-hidden />
             <span>
-              Vos mots restent <strong>uniquement sur cet appareil</strong>, dans ce navigateur : aucun compte, aucun serveur. Ils ne sont pas partagés entre
-              votre téléphone et votre ordinateur.
+              Vos mots restent <strong>uniquement sur cet appareil</strong>, dans ce navigateur, chiffrés avec votre code d’accès : aucun serveur. Ils ne
+              sont pas partagés entre votre téléphone et votre ordinateur.
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <LockKeyhole className="mt-0.5 size-5 shrink-0 text-brand" aria-hidden />
+            <span className="text-muted">
+              Le code est demandé à chaque nouvelle ouverture de Lexio. Il n’est enregistré nulle part : en cas d’oubli, l’espace ne peut plus être ouvert,
+              d’où l’intérêt d’une sauvegarde.
             </span>
           </li>
           <li className="flex gap-3">
@@ -66,6 +72,10 @@ export function SettingsPage() {
             </span>
           </li>
         </ul>
+        <button type="button" className="btn-secondary mt-4" onClick={lock}>
+          <LockKeyhole className="size-4.5" aria-hidden />
+          Verrouiller l’espace
+        </button>
       </Section>
 
       <Section

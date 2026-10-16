@@ -1,4 +1,4 @@
-import { BookOpen, ChartColumn, House, Plus, Settings, Sparkles, TriangleAlert } from 'lucide-react'
+import { BookOpen, ChartColumn, House, LockKeyhole, Plus, Settings, Sparkles, TriangleAlert } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { useData } from '../state/data'
@@ -25,7 +25,7 @@ export function Logo({ className = '' }: { className?: string }) {
 }
 
 export function Layout() {
-  const { persistent } = useData()
+  const { persistent, lock } = useData()
   const { openNew } = useWordDialogs()
   const { pathname } = useLocation()
   const inQuiz = pathname.startsWith('/quiz/session')
@@ -76,6 +76,14 @@ export function Layout() {
             <Settings className="size-5" aria-hidden />
             Réglages et données
           </NavLink>
+          <button
+            type="button"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium text-muted transition-colors hover:bg-slate-50 hover:text-ink"
+            onClick={lock}
+          >
+            <LockKeyhole className="size-5" aria-hidden />
+            Verrouiller
+          </button>
         </div>
       </aside>
 
@@ -85,9 +93,14 @@ export function Layout() {
           <div className="flex h-14 items-center">
             <Logo />
           </div>
-          <NavLink to="/reglages" className="icon-btn -mr-2" aria-label="Réglages et données">
-            <Settings className="size-5" />
-          </NavLink>
+          <div className="-mr-2 flex">
+            <button type="button" className="icon-btn" onClick={lock} aria-label="Verrouiller">
+              <LockKeyhole className="size-5" aria-hidden />
+            </button>
+            <NavLink to="/reglages" className="icon-btn" aria-label="Réglages et données">
+              <Settings className="size-5" />
+            </NavLink>
+          </div>
         </header>
 
         {!persistent && (

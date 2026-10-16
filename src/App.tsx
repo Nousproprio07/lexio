@@ -1,6 +1,6 @@
 import { RefreshCw, TriangleAlert } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
+import { useCallback, useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router'
 import { Layout, Logo } from './components/Layout'
 import { WordDialogsProvider } from './components/WordDialogs'
 import { Spinner } from './components/ui'
@@ -11,6 +11,7 @@ import { QuizPlayPage } from './pages/QuizPlay'
 import { QuizResultPage } from './pages/QuizResult'
 import { QuizSetupPage } from './pages/QuizSetup'
 import { SettingsPage } from './pages/Settings'
+import { UnlockPage } from './pages/Unlock'
 import { LocalRepository } from './data/local'
 import { DataProvider, useData } from './state/data'
 import { QuizProvider } from './state/quiz'
@@ -68,13 +69,21 @@ function DataGate() {
 }
 
 function Gate() {
-  const [repo, setRepo] = useState<LocalRepository | null>(null)
+  // undefined : vérification d'un espace déjà ouvert dans cet onglet ; null : code à saisir
+  const [repo, setRepo] = useState<LocalRepository | null | undefined>(undefined)
   useEffect(() => {
-    void LocalRepository.open().then(setRepo)
+    void LocalRepository.resume().then(setRepo)
   }, [])
-  if (!repo) return <FullScreenLoader />
+  const navigate = useNavigate()
+  // l'espace suivant s'ouvre sur l'accueil, pas sur la page de l'espace précédent
+  const lock = useCallback(() => {
+    setRepo(null)
+    navigate('/', { replace: true })
+  }, [navigate])
+  if (repo === undefined) return <FullScreenLoader />
+  if (repo === null) return <UnlockPage onOpen={setRepo} />
   return (
-    <DataProvider repo={repo}>
+    <DataProvider key={repo.spaceId} repo={repo} onLock={lock}>
       <DataGate />
     </DataProvider>
   )
