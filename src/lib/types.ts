@@ -1,4 +1,4 @@
-// Types du domaine Lexio, indépendants du stockage (Supabase ou démo).
+// Types du domaine Lexio, indépendants du stockage.
 
 export type Status = 'new' | 'learning' | 'weak' | 'mastered'
 

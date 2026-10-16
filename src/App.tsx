@@ -1,9 +1,9 @@
-import { RefreshCw, WifiOff } from 'lucide-react'
+import { RefreshCw, TriangleAlert } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router'
 import { Layout, Logo } from './components/Layout'
 import { WordDialogsProvider } from './components/WordDialogs'
 import { Spinner } from './components/ui'
-import { AuthPage, NewPasswordPage } from './pages/Auth'
 import { DictionaryPage } from './pages/Dictionary'
 import { HomePage } from './pages/Home'
 import { ProgressPage } from './pages/Progress'
@@ -11,7 +11,7 @@ import { QuizPlayPage } from './pages/QuizPlay'
 import { QuizResultPage } from './pages/QuizResult'
 import { QuizSetupPage } from './pages/QuizSetup'
 import { SettingsPage } from './pages/Settings'
-import { AuthProvider, useAuth } from './state/auth'
+import { LocalRepository } from './data/local'
 import { DataProvider, useData } from './state/data'
 import { QuizProvider } from './state/quiz'
 import { ToastProvider } from './state/toast'
@@ -34,12 +34,10 @@ function DataGate() {
       <div className="flex min-h-dvh items-center justify-center px-4">
         <div className="card max-w-sm p-6 text-center">
           <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl bg-slate-100 text-muted">
-            <WifiOff className="size-6" aria-hidden />
+            <TriangleAlert className="size-6" aria-hidden />
           </div>
-          <h1 className="text-lg font-semibold">Impossible de charger vos mots</h1>
-          <p className="mt-1.5 text-[15px] text-muted">
-            {navigator.onLine ? 'Le serveur ne répond pas pour le moment.' : 'Vous semblez hors ligne.'} Vos données sont en sécurité : réessayez dans un instant.
-          </p>
+          <h1 className="text-lg font-semibold">Impossible de lire vos mots</h1>
+          <p className="mt-1.5 text-[15px] text-muted">Le stockage de l'appareil n'a pas répondu. Réessayez, ou fermez les autres onglets de Lexio.</p>
           <p className="mt-2 text-xs break-words text-slate-400">{error}</p>
           <button type="button" className="btn-primary mt-5" onClick={reload}>
             <RefreshCw className="size-4.5" aria-hidden />
@@ -70,13 +68,13 @@ function DataGate() {
 }
 
 function Gate() {
-  const { state } = useAuth()
-  if (state.status === 'loading') return <FullScreenLoader />
-  if (state.status === 'signedOut') return <AuthPage />
-  if (state.status === 'recovery') return <NewPasswordPage />
-  // la clé remonte tout l'état quand on change de compte ou de mode
+  const [repo, setRepo] = useState<LocalRepository | null>(null)
+  useEffect(() => {
+    void LocalRepository.open().then(setRepo)
+  }, [])
+  if (!repo) return <FullScreenLoader />
   return (
-    <DataProvider key={state.scope} repo={state.repo} scope={state.scope}>
+    <DataProvider repo={repo}>
       <DataGate />
     </DataProvider>
   )
@@ -86,9 +84,7 @@ export function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <ToastProvider>
-        <AuthProvider>
-          <Gate />
-        </AuthProvider>
+        <Gate />
       </ToastProvider>
     </BrowserRouter>
   )

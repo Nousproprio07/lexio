@@ -5,6 +5,7 @@ import { useWordDialogs } from '../components/WordDialogs'
 import { EmptyState, plural } from '../components/ui'
 import { useData } from '../state/data'
 import { SMART_REVIEW, useQuiz } from '../state/quiz'
+import { useLastBackup } from '../state/settings'
 import { useStats } from '../state/stats'
 
 export function HomePage() {
@@ -14,6 +15,8 @@ export function HomePage() {
   const { run, start } = useQuiz()
   const navigate = useNavigate()
   const activeRun = run && !run.finishedAt ? run : null
+  const [lastBackup] = useLastBackup()
+  const backupDue = words.length >= 10 && (!lastBackup || Date.now() - new Date(lastBackup).getTime() > 30 * 86_400_000)
 
   const reviewNow = () => {
     if (activeRun) return navigate('/quiz')
@@ -109,6 +112,15 @@ export function HomePage() {
               </button>
             )}
           </section>
+
+          {backupDue && (
+            <p className="text-center text-sm text-muted">
+              Vos mots ne sont stockés que sur cet appareil.{' '}
+              <Link to="/reglages" className="font-medium text-brand hover:underline">
+                Faire une sauvegarde
+              </Link>
+            </p>
+          )}
 
           {stats.streak > 0 && !stats.studiedToday && (
             <p className="text-center text-sm text-muted">

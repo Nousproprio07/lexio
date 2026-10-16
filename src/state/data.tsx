@@ -1,8 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Outbox, type OutboxOp } from '../data/outbox'
-import { DuplicateError, type Repository, type WordInput } from '../data/repository'
+import type { LocalRepository } from '../data/local'
+import { DuplicateError, type WordInput } from '../data/repository'
 import { textKey } from '../lib/normalize'
-import type { Category, QuizSession, Word, WordProgress } from '../lib/types'
+import type { Category, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
+import { useToast } from './toast'
+
+/** Écritures produites par une réponse de quiz. */
+export type QuizWrite =
+  | { kind: 'session'; session: QuizSession }
+  | { kind: 'answers'; answers: QuizAnswer[] }
+  | { kind: 'progress'; items: WordProgress[] }
 
 export interface WordDraft {
   term: string
@@ -13,7 +20,9 @@ export interface WordDraft {
 }
 
 interface DataApi {
-  repo: Repository
+  repo: LocalRepository
+  /** Faux si le navigateur refuse le stockage durable (données perdues à la fermeture). */
+  persistent: boolean
   scope: string
   loading: boolean
   error: string | null
@@ -31,31 +40,36 @@ interface DataApi {
   renameCategory(id: string, name: string): Promise<void>
   deleteCategory(id: string): Promise<void>
   importWords(drafts: WordDraft[], progress?: Map<string, Omit<WordProgress, 'wordId'>>, key?: (d: WordDraft) => string): Promise<number>
-  /** Écritures de quiz : appliquées localement tout de suite, envoyées via la file d'attente. */
-  recordQuiz(ops: OutboxOp[]): void
-  pendingSync: number
+  /** Écritures de quiz : appliquées à l'écran tout de suite, enregistrées en arrière-plan. */
+  recordQuiz(ops: QuizWrite[]): void
 }
 
 const DataContext = createContext<DataApi | null>(null)
 
-export function DataProvider({ repo, scope, children }: { repo: Repository; scope: string; children: ReactNode }) {
+export function DataProvider({ repo, children }: { repo: LocalRepository; children: ReactNode }) {
+  const scope = 'local'
+  const notify = useToast()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [words, setWords] = useState<Word[]>([])
   const [progress, setProgress] = useState<Map<string, WordProgress>>(new Map())
   const [sessions, setSessions] = useState<QuizSession[]>([])
-  const [pendingSync, setPendingSync] = useState(0)
   const [reloadKey, setReloadKey] = useState(0)
 
-  const outbox = useMemo(() => new Outbox(repo, `lexio:outbox:${scope}`), [repo, scope])
-  useEffect(() => {
-    const unsub = outbox.subscribe(setPendingSync)
-    return () => {
-      unsub()
-      outbox.dispose()
-    }
-  }, [outbox])
+  // un autre onglet a modifié les données : on les relit sans écran de chargement
+  useEffect(
+    () =>
+      repo.onExternalChange(async () => {
+        await repo.refresh()
+        const snap = await repo.loadAll()
+        setCategories(snap.categories)
+        setWords(snap.words)
+        setProgress(new Map(snap.progress.map((p) => [p.wordId, p])))
+        setSessions(snap.sessions)
+      }),
+    [repo],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -63,8 +77,6 @@ export function DataProvider({ repo, scope, children }: { repo: Repository; scop
     setError(null)
     ;(async () => {
       try {
-        // d'abord les écritures en attente, pour charger un état à jour
-        await outbox.flush()
         const snap = await repo.loadAll()
         if (cancelled) return
         setCategories(snap.categories)
@@ -80,7 +92,7 @@ export function DataProvider({ repo, scope, children }: { repo: Repository; scop
     return () => {
       cancelled = true
     }
-  }, [repo, outbox, reloadKey])
+  }, [repo, reloadKey])
 
   const reload = useCallback(() => setReloadKey((k) => k + 1), [])
 
@@ -205,7 +217,7 @@ export function DataProvider({ repo, scope, children }: { repo: Repository; scop
   )
 
   const recordQuiz = useCallback(
-    (ops: OutboxOp[]) => {
+    (ops: QuizWrite[]) => {
       for (const op of ops) {
         if (op.kind === 'progress') {
           setProgress((m) => {
@@ -217,13 +229,24 @@ export function DataProvider({ repo, scope, children }: { repo: Repository; scop
           setSessions((ss) => [...ss.filter((s) => s.id !== op.session.id), op.session])
         }
       }
-      outbox.push(...ops)
+      void (async () => {
+        try {
+          for (const op of ops) {
+            if (op.kind === 'session') await repo.upsertSession(op.session)
+            else if (op.kind === 'answers') await repo.insertAnswers(op.answers)
+            else await repo.upsertProgress(op.items)
+          }
+        } catch {
+          notify("Votre réponse n'a pas pu être enregistrée sur l'appareil (espace plein ?).", 'error')
+        }
+      })()
     },
-    [outbox],
+    [repo, notify],
   )
 
   const value: DataApi = {
     repo,
+    persistent: repo.persistent,
     scope,
     loading,
     error,
@@ -241,7 +264,6 @@ export function DataProvider({ repo, scope, children }: { repo: Repository; scop
     deleteCategory,
     importWords,
     recordQuiz,
-    pendingSync,
   }
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>

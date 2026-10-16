@@ -1,5 +1,5 @@
 /**
- * Parcours utilisateur complet, en mode démonstration (aucune donnée réelle).
+ * Parcours utilisateur complet, dans un navigateur vierge (données stockées sur l'appareil).
  * Usage : npm run build && npm run e2e   (lance `vite preview` sur le port 4173)
  * Les captures sont écrites dans test-results/.
  */
@@ -40,7 +40,6 @@ async function run(label, contextOptions) {
   const shot = (name) => page.screenshot({ path: `${OUT}/${label}-${name}.png`, fullPage: true })
 
   await page.goto(BASE)
-  await page.getByRole('button', { name: /mode démonstration/i }).click()
   await page.getByText('Un mot de plus, chaque jour.').first().waitFor()
   check(await page.getByText('Votre dictionnaire vous attend').isVisible(), 'accueil vide accueillant')
   await shot('01-accueil-vide')
@@ -72,6 +71,15 @@ async function run(label, contextOptions) {
   await page.waitForTimeout(300)
 
   check((await page.locator('dl').first().innerText()).includes('5'), 'compteur de mots = 5')
+  // persistance : rechargement, puis nouvel onglet après fermeture du premier
+  await page.reload()
+  await page.getByText('Mots enregistrés').waitFor()
+  check((await page.locator('dl').first().innerText()).includes('5'), 'mots conservés après rechargement')
+  const page2 = await ctx.newPage()
+  await page2.goto(`${BASE}/dictionnaire`)
+  await page2.getByRole('heading', { name: 'Mon dictionnaire' }).waitFor()
+  check((await page2.locator('main li article').count()) === 5, 'mots retrouvés dans un nouvel onglet')
+  await page2.close()
   await shot('03-accueil')
 
   // --- dictionnaire ----------------------------------------------------------
@@ -168,6 +176,8 @@ async function run(label, contextOptions) {
   await page.getByRole('button', { name: /Sauvegarde complète/ }).click()
   const file = await dl
   check(/lexio-sauvegarde-.*\.json/.test(file.suggestedFilename()), 'export JSON téléchargé')
+  check(await page.getByText(/Dernière sauvegarde le/).isVisible(), 'date de sauvegarde affichée')
+  check(await page.getByText(/uniquement sur cet appareil/).isVisible(), 'stockage local expliqué')
   await shot('13-reglages')
 
   // --- suppression -------------------------------------------------------------

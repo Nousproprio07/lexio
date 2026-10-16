@@ -21,13 +21,8 @@ export class DuplicateError extends Error {
   }
 }
 
-/**
- * Accès aux données. Deux implémentations :
- *  - SupabaseRepository : les vraies données, dans Postgres ;
- *  - DemoRepository : bac à sable local et isolé, pour essayer ou tester.
- */
+/** Accès aux données (implémentation : LocalRepository, stockage sur l'appareil). */
 export interface Repository {
-  readonly kind: 'supabase' | 'demo'
   loadAll(): Promise<Snapshot>
   createCategory(name: string): Promise<Category>
   renameCategory(id: string, name: string): Promise<void>

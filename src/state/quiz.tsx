@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { uuid } from '../data/repository'
-import type { OutboxOp } from '../data/outbox'
 import {
   buildQuestions,
   computeScore,
@@ -13,7 +12,7 @@ import {
 } from '../lib/quiz'
 import { review } from '../lib/srs'
 import type { QuizMode, QuizSession } from '../lib/types'
-import { useData } from './data'
+import { useData, type QuizWrite } from './data'
 
 export interface RunConfig {
   mode: QuizMode
@@ -136,7 +135,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
             ? { ...next, index: run.index + 1, revealed: false }
             : { ...next, finishedAt: now.toISOString() }
       }
-      const ops: OutboxOp[] = [
+      const ops: QuizWrite[] = [
         { kind: 'session', session: sessionRow(next) },
         {
           kind: 'answers',

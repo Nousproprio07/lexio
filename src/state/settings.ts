@@ -28,3 +28,32 @@ export function useIgnoreAccents(): [boolean, (v: boolean) => void] {
   }, [])
   return [value, set]
 }
+
+/** Date du dernier export (rappel de sauvegarde). */
+const BACKUP_KEY = 'lexio:lastBackupAt'
+const backupListeners = new Set<() => void>()
+
+function readBackup(): string | null {
+  try {
+    return localStorage.getItem(BACKUP_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function useLastBackup(): [string | null, () => void] {
+  const value = useSyncExternalStore(
+    (cb) => (backupListeners.add(cb), () => void backupListeners.delete(cb)),
+    readBackup,
+    () => null,
+  )
+  const mark = useCallback(() => {
+    try {
+      localStorage.setItem(BACKUP_KEY, new Date().toISOString())
+    } catch {
+      /* ignoré */
+    }
+    backupListeners.forEach((l) => l())
+  }, [])
+  return [value, mark]
+}

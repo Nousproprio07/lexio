@@ -1,13 +1,11 @@
-import { Check, Download, FileJson, FileSpreadsheet, FlaskConical, LogOut, Pencil, Trash2, Upload, X } from 'lucide-react'
-import { useRef, useState, type ReactNode } from 'react'
+import { Check, Download, FileJson, FileSpreadsheet, HardDrive, Pencil, ShieldCheck, Trash2, Upload, X } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessage } from '../components/WordDialogs'
 import { ConfirmDialog, Modal, PageHeader, plural, Spinner, Toggle } from '../components/ui'
-import { DEMO_SAMPLE, DEMO_STORAGE_KEY } from '../data/demo'
 import { dedupeImport, parseCsvImport, parseJsonImport, toCsv, toJsonExport, wordKey, type ImportParseResult, type ImportRow } from '../lib/transfer'
 import type { Category } from '../lib/types'
-import { useAuth } from '../state/auth'
 import { useData } from '../state/data'
-import { useIgnoreAccents } from '../state/settings'
+import { useIgnoreAccents, useLastBackup } from '../state/settings'
 import { useToast } from '../state/toast'
 
 function download(name: string, content: string, type: string) {
@@ -24,16 +22,19 @@ function download(name: string, content: string, type: string) {
 const stamp = () => new Date().toISOString().slice(0, 10)
 
 export function SettingsPage() {
-  const { state, signOut, exitDemo } = useAuth()
-  const data = useData()
-  const { words, categories, progress, categoryName } = data
+  const { words, categories, progress, categoryName, persistent } = useData()
   const [ignoreAccents, setIgnoreAccents] = useIgnoreAccents()
+  const [lastBackup, markBackup] = useLastBackup()
   const notify = useToast()
-  const isDemo = data.repo.kind === 'demo'
-  const email = state.status === 'ready' ? state.email : null
+  const [protectedStorage, setProtectedStorage] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    void navigator.storage?.persisted?.().then(setProtectedStorage, () => setProtectedStorage(null))
+  }, [])
 
   const exportJson = () => {
     download(`lexio-sauvegarde-${stamp()}.json`, JSON.stringify(toJsonExport(words, categories, progress, new Date()), null, 2), 'application/json')
+    markBackup()
     notify('Sauvegarde téléchargée')
   }
   const exportCsv = () => {
@@ -45,7 +46,36 @@ export function SettingsPage() {
     <div className="mx-auto max-w-2xl animate-fade-up space-y-5">
       <PageHeader title="Réglages et données" />
 
-      <Section title="Sauvegarde" description="Téléchargez une copie de votre dictionnaire à tout moment.">
+      <Section title="Vos données">
+        <ul className="space-y-3 text-[15px] leading-relaxed">
+          <li className="flex gap-3">
+            <HardDrive className="mt-0.5 size-5 shrink-0 text-brand" aria-hidden />
+            <span>
+              Vos mots restent <strong>uniquement sur cet appareil</strong>, dans ce navigateur : aucun compte, aucun serveur. Ils ne sont pas partagés entre
+              votre téléphone et votre ordinateur.
+            </span>
+          </li>
+          <li className="flex gap-3">
+            <ShieldCheck className={`mt-0.5 size-5 shrink-0 ${persistent && protectedStorage ? 'text-success' : 'text-muted'}`} aria-hidden />
+            <span className="text-muted">
+              {!persistent
+                ? 'Stockage indisponible dans ce mode de navigation : exportez vos mots avant de fermer.'
+                : protectedStorage
+                  ? 'Stockage protégé : le navigateur ne les effacera pas pour libérer de la place.'
+                  : 'Sur iPhone, ajoutez Lexio à l’écran d’accueil (Partager → Sur l’écran d’accueil) : Safari peut sinon effacer les données d’un site non utilisé pendant 7 jours. Évitez aussi d’effacer l’historique et les données de sites.'}
+            </span>
+          </li>
+        </ul>
+      </Section>
+
+      <Section
+        title="Sauvegarde"
+        description={
+          lastBackup
+            ? `Dernière sauvegarde le ${new Date(lastBackup).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}.`
+            : 'Aucune sauvegarde pour l’instant. Téléchargez-en une de temps en temps : c’est votre filet de sécurité.'
+        }
+      >
         <div className="grid gap-2 sm:grid-cols-2">
           <button type="button" className="btn-secondary justify-start" onClick={exportJson} disabled={words.length === 0}>
             <FileJson className="size-5 text-brand" aria-hidden />
@@ -72,24 +102,6 @@ export function SettingsPage() {
 
       <CategoriesSection categories={categories} />
 
-      {isDemo ? (
-        <DemoSection />
-      ) : (
-        <Section title="Compte">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="min-w-0 text-[15px] break-all">{email}</p>
-            <button type="button" className="btn-secondary" onClick={() => void signOut()}>
-              <LogOut className="size-4.5" aria-hidden />
-              Se déconnecter
-            </button>
-          </div>
-        </Section>
-      )}
-      {isDemo && (
-        <button type="button" className="btn-ghost w-full" onClick={exitDemo}>
-          Quitter le mode démonstration
-        </button>
-      )}
     </div>
   )
 }
@@ -338,66 +350,6 @@ function CategoriesSection({ categories }: { categories: Category[] }) {
         busy={busy}
         onConfirm={confirmDelete}
         onCancel={() => setToDelete(null)}
-      />
-    </Section>
-  )
-}
-
-// ---------------------------------------------------------------------------
-
-function DemoSection() {
-  const { words, importWords } = useData()
-  const notify = useToast()
-  const [busy, setBusy] = useState(false)
-  const [confirmReset, setConfirmReset] = useState(false)
-
-  const loadSample = async () => {
-    setBusy(true)
-    try {
-      const existing = new Set(words.map((w) => w.term))
-      const n = await importWords(
-        DEMO_SAMPLE.filter((s) => !existing.has(s.term)).map((s) => ({ term: s.term, definition: s.definition, example: s.example, categoryName: s.category })),
-      )
-      notify(plural(n, "mot d'exemple ajouté", "mots d'exemple ajoutés"))
-    } catch (e) {
-      notify(errorMessage(e), 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const reset = () => {
-    try {
-      localStorage.removeItem(DEMO_STORAGE_KEY)
-      localStorage.removeItem('lexio:quiz:demo')
-      localStorage.removeItem('lexio:outbox:demo')
-    } catch {
-      /* ignoré */
-    }
-    setConfirmReset(false)
-    // recharge la page pour repartir d'un dépôt de démo vierge
-    window.location.reload()
-  }
-
-  return (
-    <Section title="Mode démonstration" description="Ces données d'essai restent dans ce navigateur et ne touchent jamais votre compte.">
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn-secondary" onClick={loadSample} disabled={busy}>
-          {busy ? <Spinner /> : <FlaskConical className="size-4.5 text-brand" aria-hidden />}
-          Ajouter des mots d'exemple
-        </button>
-        <button type="button" className="btn-secondary text-danger" onClick={() => setConfirmReset(true)}>
-          <Trash2 className="size-4.5" aria-hidden />
-          Effacer la démo
-        </button>
-      </div>
-      <ConfirmDialog
-        open={confirmReset}
-        title="Effacer les données de démonstration ?"
-        message="Tous les mots et résultats de la démo seront supprimés de ce navigateur."
-        confirmLabel="Effacer"
-        onConfirm={reset}
-        onCancel={() => setConfirmReset(false)}
       />
     </Section>
   )

@@ -1,7 +1,6 @@
-import { BookOpen, ChartColumn, CloudOff, FlaskConical, House, Plus, Settings, Sparkles } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { BookOpen, ChartColumn, House, Plus, Settings, Sparkles, TriangleAlert } from 'lucide-react'
+import { useEffect, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
-import { useAuth } from '../state/auth'
 import { useData } from '../state/data'
 import { useWordDialogs } from './WordDialogs'
 
@@ -25,26 +24,9 @@ export function Logo({ className = '' }: { className?: string }) {
   )
 }
 
-function useOnline() {
-  const [online, setOnline] = useState(() => navigator.onLine)
-  useEffect(() => {
-    const up = () => setOnline(true)
-    const down = () => setOnline(false)
-    window.addEventListener('online', up)
-    window.addEventListener('offline', down)
-    return () => {
-      window.removeEventListener('online', up)
-      window.removeEventListener('offline', down)
-    }
-  }, [])
-  return online
-}
-
 export function Layout() {
-  const { repo, pendingSync } = useData()
-  const { exitDemo } = useAuth()
+  const { persistent } = useData()
   const { openNew } = useWordDialogs()
-  const online = useOnline()
   const { pathname } = useLocation()
   const inQuiz = pathname.startsWith('/quiz/session')
 
@@ -108,20 +90,10 @@ export function Layout() {
           </NavLink>
         </header>
 
-        {repo.kind === 'demo' && (
-          <Banner tone="amber" icon={<FlaskConical className="size-4 shrink-0" aria-hidden />}>
-            Mode démonstration : données d'essai stockées uniquement dans ce navigateur, séparées de votre compte.{' '}
-            <button type="button" className="font-semibold underline underline-offset-2" onClick={exitDemo}>
-              Quitter la démo
-            </button>
-          </Banner>
-        )}
-        {(!online || pendingSync > 0) && (
-          <Banner tone="slate" icon={<CloudOff className="size-4 shrink-0" aria-hidden />}>
-            {!online ? 'Hors ligne. ' : ''}
-            {pendingSync > 0
-              ? 'Vos dernières réponses sont gardées sur cet appareil et seront synchronisées automatiquement.'
-              : 'Vous pouvez réviser : les réponses seront synchronisées au retour du réseau.'}
+        {!persistent && (
+          <Banner icon={<TriangleAlert className="size-4 shrink-0" aria-hidden />}>
+            Ce navigateur n'autorise pas le stockage (navigation privée ?) : vos mots seront perdus à la fermeture. Ouvrez Lexio dans une fenêtre
+            normale ou exportez-les depuis Réglages.
           </Banner>
         )}
 
@@ -165,14 +137,9 @@ export function Layout() {
   )
 }
 
-function Banner({ tone, icon, children }: { tone: 'amber' | 'slate'; icon: ReactNode; children: ReactNode }) {
+function Banner({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
-    <div
-      role="status"
-      className={`flex items-start gap-2 px-4 py-2 text-[13px] leading-snug md:px-10 ${
-        tone === 'amber' ? 'bg-amber-50 text-amber-900' : 'bg-slate-100 text-slate-700'
-      }`}
-    >
+    <div role="status" className="flex items-start gap-2 bg-amber-50 px-4 py-2 text-[13px] leading-snug text-amber-900 md:px-10">
       <span className="mt-0.5">{icon}</span>
       <p>{children}</p>
     </div>
