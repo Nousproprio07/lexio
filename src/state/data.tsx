@@ -20,6 +20,7 @@ export interface WordDraft {
   /** Nom de catégorie saisi ; créée à la volée si elle n'existe pas. */
   categoryName: string | null
   imageId?: string | null
+  imageCredit?: string | null
   alternates?: string[]
 }
 
@@ -49,6 +50,8 @@ interface DataApi {
   saveWord(draft: WordDraft, id?: string): Promise<Word>
   /** Enregistre une image (chiffrée) et renvoie son identifiant. */
   saveImage(blob: Blob): Promise<string>
+  /** Ajoute une image à une question qui n'en a pas, sans rien modifier d'autre. */
+  addImageToQuestion(id: string, image: Blob, credit: string | null): Promise<Word>
   deleteWord(id: string): Promise<void>
   renameCategory(id: string, name: string): Promise<void>
   deleteCategory(id: string): Promise<void>
@@ -63,7 +66,13 @@ const DataContext = createContext<DataApi | null>(null)
 function toInput(d: WordDraft, categoryId: string | null): WordInput {
   const base = { term: d.term.trim(), definition: d.definition.trim(), example: d.example?.trim() || null, categoryId }
   if (d.kind !== 'question') return base
-  return { ...base, kind: 'question', imageId: d.imageId ?? null, alternates: d.alternates ?? [] }
+  return {
+    ...base,
+    kind: 'question',
+    imageId: d.imageId ?? null,
+    imageCredit: d.imageId ? (d.imageCredit ?? null) : null,
+    alternates: d.alternates ?? [],
+  }
 }
 
 export function DataProvider({ repo, onLock, children }: { repo: LocalRepository; onLock(): void; children: ReactNode }) {
@@ -167,6 +176,15 @@ export function DataProvider({ repo, onLock, children }: { repo: LocalRepository
   )
 
   const saveImage = useCallback((blob: Blob) => repo.putImage(blob), [repo])
+
+  const addImageToQuestion = useCallback(
+    async (id: string, image: Blob, credit: string | null) => {
+      const saved = await repo.addImageToQuestion(id, await repo.putImage(image), credit)
+      setWords((ws) => ws.map((w) => (w.id === id ? saved : w)))
+      return saved
+    },
+    [repo],
+  )
 
   const deleteWord = useCallback(
     async (id: string) => {
@@ -285,6 +303,7 @@ export function DataProvider({ repo, onLock, children }: { repo: LocalRepository
     findDuplicate,
     saveWord,
     saveImage,
+    addImageToQuestion,
     deleteWord,
     renameCategory,
     deleteCategory,

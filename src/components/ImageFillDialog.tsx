@@ -8,11 +8,14 @@ import { WikiImagePicker } from './WikiImagePicker'
 import { errorMessage } from './WordDialogs'
 
 /**
- * Passe en revue les questions sans image : pour chacune, une recherche
- * Wikipédia est lancée sur la réponse (l'artiste, le lieu…) et on touche la bonne photo.
+ * Complète les images manquantes : passe en revue les questions sans image ;
+ * pour chacune, la recherche Wikipédia est lancée sur son sujet et la meilleure
+ * image est proposée. Rien n'est enregistré sans validation, seule l'image est
+ * ajoutée (question, réponse et progression intactes), et une question qui a
+ * déjà une image n'est jamais modifiée.
  */
 export function ImageFillDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { words, wordById, categoryName, saveWord, saveImage } = useData()
+  const { words, wordById, addImageToQuestion } = useData()
   const notify = useToast()
   // liste figée à l'ouverture : elle ne bouge pas à mesure que les images sont ajoutées
   const [queue, setQueue] = useState<string[]>([])
@@ -30,24 +33,19 @@ export function ImageFillDialog({ open, onClose }: { open: boolean; onClose: () 
 
   const current = queue[index] ? wordById.get(queue[index]) : undefined
   const done = open && queue.length > 0 && index >= queue.length
+  const total = words.filter((w) => w.kind === 'question').length
+  const illustrated = words.filter((w) => w.kind === 'question' && w.imageId).length
 
-  const pick = async (image: Blob) => {
-    if (!current) return
+  // question supprimée ou illustrée entre-temps (autre onglet) : on passe
+  useEffect(() => {
+    if (open && queue[index] && (!current || current.imageId)) setIndex((i) => i + 1)
+  }, [open, queue, index, current])
+
+  const pick = async (image: Blob, credit: string | null) => {
+    if (!current || current.imageId) return
     setSaving(true)
     try {
-      const imageId = await saveImage(image)
-      await saveWord(
-        {
-          kind: 'question',
-          term: current.term,
-          definition: current.definition,
-          example: current.example,
-          categoryName: categoryName(current.categoryId),
-          alternates: current.alternates ?? [],
-          imageId,
-        },
-        current.id,
-      )
+      await addImageToQuestion(current.id, image, credit)
       setAdded((n) => n + 1)
       setIndex((i) => i + 1)
     } catch (e) {
@@ -61,7 +59,7 @@ export function ImageFillDialog({ open, onClose }: { open: boolean; onClose: () 
     <Modal
       open={open}
       onClose={onClose}
-      title="Ajouter les images"
+      title="Compléter les images manquantes"
       footer={
         done || queue.length === 0 ? (
           <button type="button" className="btn-primary w-full" onClick={onClose}>
@@ -88,16 +86,24 @@ export function ImageFillDialog({ open, onClose }: { open: boolean; onClose: () 
             <Check className="size-6" aria-hidden />
           </span>
           <p className="font-semibold">{added > 0 ? `${plural(added, 'image ajoutée', 'images ajoutées')}` : 'Aucune image ajoutée'}</p>
-          {added < queue.length && <p className="mt-1 text-sm text-muted">{plural(queue.length - added, 'question passée', 'questions passées')}.</p>}
+          <p className="mt-1 text-sm text-muted">
+            {illustrated} {illustrated > 1 ? 'questions illustrées' : 'question illustrée'} sur {total}
+            {added < queue.length ? ` · ${plural(queue.length - added, 'question passée', 'questions passées')}` : ''}.
+          </p>
         </div>
       ) : (
         current && (
           <div className="space-y-4">
             <div>
-              <p className="mb-2 text-sm text-muted tabular-nums">
-                Question {index + 1} sur {queue.length}
+              <p className="mb-2 flex justify-between gap-2 text-sm text-muted tabular-nums">
+                <span>
+                  Question {index + 1} sur {queue.length}
+                </span>
+                <span aria-live="polite">
+                  {illustrated} {illustrated > 1 ? 'questions illustrées' : 'question illustrée'} sur {total}
+                </span>
               </p>
-              <ProgressBar value={(index / queue.length) * 100} label="Avancement" />
+              <ProgressBar value={total ? (illustrated / total) * 100 : 0} label="Questions illustrées" />
             </div>
             <div className="rounded-2xl bg-page p-3.5">
               <p className="text-[15px] font-medium break-words">{current.definition}</p>
@@ -110,7 +116,7 @@ export function ImageFillDialog({ open, onClose }: { open: boolean; onClose: () 
                 <Spinner className="size-5 text-brand" />
               </div>
             ) : (
-              <WikiImagePicker key={current.id} initialQuery={defaultImageQuery(current.term, current.definition)} onPick={(img) => void pick(img)} />
+              <WikiImagePicker key={current.id} initialQuery={defaultImageQuery(current.term, current.definition)} onPick={(img, credit) => void pick(img, credit)} />
             )}
           </div>
         )

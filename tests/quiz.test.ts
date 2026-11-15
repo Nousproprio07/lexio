@@ -13,7 +13,7 @@ import {
   type SessionFilters,
   type SessionSize,
 } from '../src/lib/quiz'
-import { defaultImageQuery } from '../src/lib/wiki'
+import { defaultImageQuery, formatCredit } from '../src/lib/wiki'
 import { looksLikeQuestion, parseAlternates, sameEntry } from '../src/lib/entries'
 import { isCorrectAnswer, normalizeAnswer } from '../src/lib/normalize'
 import { review } from '../src/lib/srs'
@@ -262,5 +262,13 @@ describe('recherche d’images', () => {
   it('cherche la réponse, ou le sujet de la question si la réponse est une phrase', () => {
     expect(defaultImageQuery('Claude Monet', 'Qui a peint ce tableau ?')).toBe('Claude Monet')
     expect(defaultImageQuery('x'.repeat(80), 'Où se trouve le musée du Prado ?')).toBe('le musée du Prado')
+    expect(defaultImageQuery('1889', 'En quelle année a été construite la tour Eiffel ?')).toContain('tour Eiffel')
+    expect(defaultImageQuery('Tour Eiffel', 'Quel est ce monument ?')).toBe('Tour Eiffel')
+  })
+
+  it('attribution : auteur, licence et source, sans HTML', () => {
+    expect(formatCredit('Fichier:Mural_del_Gernika.jpg', '<a href="x">Papamanila</a>', 'CC BY-SA 3.0', true)).toBe(
+      'Papamanila · CC BY-SA 3.0 · Wikimedia Commons, « Mural del Gernika.jpg »',
+    )
   })
 })

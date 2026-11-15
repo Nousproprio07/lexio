@@ -92,10 +92,13 @@ export function CulturePage() {
             <Globe className="size-5" aria-hidden />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block font-semibold">Ajouter de vraies images</span>
+            <span className="flex items-center gap-2 font-semibold">
+              Compléter les images manquantes
+              <span className="rounded-full bg-brand px-2 py-0.5 text-xs font-bold text-white tabular-nums">{withoutImage}</span>
+            </span>
             <span className="block text-sm text-muted">
-              {withoutImage > 1 ? `${withoutImage} questions n’ont pas d’image` : '1 question n’a pas d’image'} : portraits d’artistes, œuvres, lieux, depuis
-              Wikipédia.
+              {questions.length - withoutImage} {questions.length - withoutImage > 1 ? 'questions illustrées' : 'question illustrée'} sur {questions.length}.
+              Portraits d’artistes, œuvres, monuments et lieux, depuis Wikipédia.
             </span>
           </span>
         </button>

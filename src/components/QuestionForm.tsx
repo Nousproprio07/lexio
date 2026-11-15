@@ -29,9 +29,11 @@ interface FormState {
   imageId: string | null
   /** Nouvelle image choisie, pas encore enregistrée. */
   image: Blob | null
+  /** Attribution de l'image (Wikipédia / Commons) ; null pour une photo personnelle. */
+  imageCredit: string | null
 }
 
-const emptyForm: FormState = { question: '', answer: '', alternates: '', category: '', example: '', imageId: null, image: null }
+const emptyForm: FormState = { question: '', answer: '', alternates: '', category: '', example: '', imageId: null, image: null, imageCredit: null }
 
 /**
  * Création, modification d'une question de culture générale, ou transformation
@@ -75,6 +77,7 @@ export function QuestionFormDialog({
         example: word.example ?? '',
         imageId: word.imageId ?? null,
         image: null,
+        imageCredit: word.imageCredit ?? null,
       })
     else {
       // mot rangé dans « Mots » : la question est le plus souvent dans le champ qui se termine par « ? »
@@ -104,6 +107,7 @@ export function QuestionFormDialog({
     example: form.example.trim() || null,
     categoryName: form.category.trim() || null,
     imageId: form.imageId,
+    imageCredit: form.imageCredit,
     alternates: parseAlternates(form.alternates),
   }
   // une nouvelle image rend la question distincte : pas de doublon possible avant l'enregistrement
@@ -129,7 +133,7 @@ export function QuestionFormDialog({
     setServerError(null)
     try {
       const image = await compressImage(file)
-      setForm((f) => ({ ...f, image, imageId: null }))
+      setForm((f) => ({ ...f, image, imageId: null, imageCredit: null }))
     } catch (e) {
       setServerError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -237,8 +241,8 @@ export function QuestionFormDialog({
             <div className="rounded-2xl border border-line p-3">
               <WikiImagePicker
                 initialQuery={webSearch}
-                onPick={(image) => {
-                  setForm((f) => ({ ...f, image, imageId: null }))
+                onPick={(image, imageCredit) => {
+                  setForm((f) => ({ ...f, image, imageId: null, imageCredit }))
                   setWebSearch(null)
                 }}
               />
@@ -270,7 +274,7 @@ export function QuestionFormDialog({
                     type="button"
                     className="btn-secondary h-9 px-2.5 text-danger shadow-sm"
                     aria-label="Retirer l'image"
-                    onClick={() => setForm((f) => ({ ...f, image: null, imageId: null }))}
+                    onClick={() => setForm((f) => ({ ...f, image: null, imageId: null, imageCredit: null }))}
                   >
                     <Trash2 className="size-4" aria-hidden />
                   </button>
@@ -299,6 +303,7 @@ export function QuestionFormDialog({
               </button>
             </div>
           )}
+          {webSearch === null && form.imageCredit && (hasImage || preparing) && <p className="mt-1.5 text-xs break-words text-muted">{form.imageCredit}</p>}
         </div>
 
         <Field label="Question" error={show(errors.question)} htmlFor="qf-question">

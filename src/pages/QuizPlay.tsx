@@ -108,6 +108,7 @@ function CultureExplain({ q }: { q: Question }) {
     <>
       <p className={`font-bold tracking-tight break-words whitespace-pre-line ${q.term.length > 60 ? 'text-lg leading-snug' : 'text-2xl'}`}>{q.term}</p>
       {q.example && <p className="mt-2 leading-relaxed whitespace-pre-line text-slate-700">{q.example}</p>}
+      {q.imageCredit && <p className="mt-3 text-xs break-words text-slate-500">Image : {q.imageCredit}</p>}
     </>
   )
 }

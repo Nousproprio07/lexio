@@ -266,6 +266,16 @@ export class LocalRepository implements Repository {
     return new Blob([await openBytes(this.space, stored.sealed)], { type: stored.type })
   }
 
+  async addImageToQuestion(id: string, imageId: string, credit: string | null): Promise<Word> {
+    const prev = this.db.words.find((w) => w.id === id)
+    if (!prev || prev.kind !== 'question') throw new Error('Question introuvable.')
+    if (prev.imageId) throw new Error('Cette question a déjà une image.')
+    const w: Word = { ...prev, imageId, imageCredit: credit, updatedAt: new Date().toISOString() }
+    this.db = { ...this.db, words: this.db.words.map((x) => (x.id === id ? w : x)) }
+    await this.save()
+    return w
+  }
+
   /** Supprime les images que plus aucune question n'utilise. */
   private async dropImages(ids: (string | null | undefined)[]) {
     const used = new Set(this.db.words.map((w) => w.imageId).filter(Boolean))
@@ -329,6 +339,7 @@ export class LocalRepository implements Repository {
       // une question redevenue un mot perd ses champs propres
       delete w.kind
       delete w.imageId
+      delete w.imageCredit
       delete w.alternates
     }
     this.db = { ...this.db, words: this.db.words.map((x) => (x.id === id ? w : x)) }

@@ -425,7 +425,10 @@ function WordDetailDialog({ wordId, onClose }: { wordId: string | null; onClose:
           {question ? (
             <>
               {word.imageId && (
-                <QuestionImage imageId={word.imageId} alt={`Image de la question : ${word.term}`} className="max-h-80 w-full rounded-2xl bg-slate-50" />
+                <figure>
+                  <QuestionImage imageId={word.imageId} alt={`Image de la question : ${word.term}`} className="max-h-80 w-full rounded-2xl bg-slate-50" />
+                  {word.imageCredit && <figcaption className="mt-1.5 text-xs break-words text-muted">Image : {word.imageCredit}</figcaption>}
+                </figure>
               )}
               <section>
                 <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Question</h3>

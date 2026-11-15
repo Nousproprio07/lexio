@@ -142,6 +142,8 @@ export interface Question {
   categoryName: string | null
   /** Culture générale : image affichée avec la question. */
   imageId?: string | null
+  /** Attribution de l'image, montrée après la réponse (elle peut nommer l'artiste). */
+  imageCredit?: string | null
   /** Saisie : orthographes acceptées (mode A : mots partageant cette définition ; culture : réponse et variantes). */
   accepted: string[]
   /** Choix : quatre propositions mélangées (définitions, ou réponses en culture générale). */
@@ -296,6 +298,7 @@ function buildCultureQuestion(
     example: w.example,
     categoryName: categoryName(w.categoryId),
     imageId: w.imageId ?? null,
+    imageCredit: w.imageId ? (w.imageCredit ?? null) : null,
     accepted: kind === 'answer' ? [w.term, ...(w.alternates ?? [])] : [],
     options,
     correctIndex,

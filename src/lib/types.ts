@@ -30,6 +30,8 @@ export interface Word {
   categoryId: string | null
   /** Question : identifiant de l'image (stockée à part, chiffrée). */
   imageId?: string | null
+  /** Question : auteur et licence de l'image quand elle vient de Wikipédia / Wikimedia Commons. */
+  imageCredit?: string | null
   /** Question : autres réponses acceptées en saisie (« Monet » pour « Claude Monet »). */
   alternates?: string[]
   createdAt: string

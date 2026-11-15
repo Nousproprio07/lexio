@@ -7,6 +7,7 @@ export interface WordInput {
   example: string | null
   categoryId: string | null
   imageId?: string | null
+  imageCredit?: string | null
   alternates?: string[]
 }
 
@@ -42,6 +43,11 @@ export interface Repository {
   /** Images des questions, chiffrées à part. L'identifiant dépend du contenu. */
   putImage(blob: Blob): Promise<string>
   getImage(id: string): Promise<Blob | null>
+  /**
+   * Illustre une question existante sans rien changer d'autre (ni la question,
+   * ni la réponse, ni la progression). Refuse si elle a déjà une image.
+   */
+  addImageToQuestion(id: string, imageId: string, credit: string | null): Promise<Word>
 }
 
 export function uuid(): string {

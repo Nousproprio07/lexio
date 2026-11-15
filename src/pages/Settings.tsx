@@ -183,6 +183,7 @@ function ImportSection() {
           example: r.example,
           categoryName: r.category,
           alternates: r.alternates,
+          imageCredit: r.imageCredit,
           imageId: blob ? await saveImage(blob) : null,
         })
       }
