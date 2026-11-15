@@ -5,7 +5,7 @@ import { ImageFillDialog } from '../components/ImageFillDialog'
 import { QuestionImage } from '../components/QuestionImage'
 import { useWordDialogs } from '../components/WordDialogs'
 import { EmptyState, PageHeader, plural, StatusBadge } from '../components/ui'
-import { looksLikeQuestion } from '../lib/entries'
+import { looksLikeQuestion, missingSlots, questionImages } from '../lib/entries'
 import { searchKey } from '../lib/normalize'
 import { isQuestion, type Status, type Word } from '../lib/types'
 import { useData } from '../state/data'
@@ -22,7 +22,8 @@ export function CulturePage() {
   const questions = useMemo(() => words.filter(isQuestion).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [words])
   // questions saisies dans « Mots » avant l'arrivée de cette section
   const misplaced = useMemo(() => words.filter((w) => looksLikeQuestion(w, categoryName(w.categoryId))), [words, categoryName])
-  const withoutImage = questions.filter((q) => !q.imageId).length
+  // questions auxquelles il manque une image (pour un tableau : l'œuvre et le peintre)
+  const withoutImage = questions.filter((q) => missingSlots(q, categoryName(q.categoryId)).length > 0).length
   const usedCategories = useMemo(() => {
     const used = new Set(questions.map((q) => q.categoryId))
     return categories.filter((c) => used.has(c.id))
@@ -191,10 +192,12 @@ export function CulturePage() {
 }
 
 function QuestionCard({ word, category, status, onOpen }: { word: Word; category: string | null; status: Status; onOpen: () => void }) {
+  const { clue, answer } = questionImages(word)
+  const thumb = clue ?? answer
   return (
     <article className="card group relative flex h-full flex-col overflow-hidden transition-shadow hover:shadow-(--shadow-pop)">
-      {word.imageId ? (
-        <QuestionImage imageId={word.imageId} alt="" fit="cover" className="aspect-[4/3] w-full bg-slate-100" />
+      {thumb ? (
+        <QuestionImage imageId={thumb.id} alt="" fit="cover" className="aspect-[4/3] w-full bg-slate-100" />
       ) : (
         <div className="flex aspect-[4/3] w-full items-center justify-center bg-brand-soft/60 text-brand/40">
           <ImageIcon className="size-8" aria-hidden />

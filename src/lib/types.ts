@@ -37,6 +37,13 @@ export interface Word {
    * s'affiche avec la question. Sinon elle illustre la réponse et n'apparaît qu'après.
    */
   imageAsClue?: boolean
+  /**
+   * Question : seconde image, montrée avec la réponse quand la première est l'indice
+   * (le tableau avec la question, le portrait du peintre avec la réponse).
+   * Lire et écrire les images via questionImages() / imageFields() (entries.ts).
+   */
+  answerImageId?: string | null
+  answerImageCredit?: string | null
   /** Question : autres réponses acceptées en saisie (« Monet » pour « Claude Monet »). */
   alternates?: string[]
   /** Question à réponse longue : mots-clés à retrouver en saisie (sinon détectés automatiquement). */

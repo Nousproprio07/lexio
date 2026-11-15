@@ -13,9 +13,9 @@ import {
   type SessionFilters,
   type SessionSize,
 } from '../src/lib/quiz'
-import { defaultImageQuery, formatCredit } from '../src/lib/wiki'
+import { clueImageQuery, defaultImageQuery, formatCredit } from '../src/lib/wiki'
 import { autoKeywords, gradeAnswer, tokenize } from '../src/lib/grading'
-import { looksLikeQuestion, parseAlternates, questionRefersToImage, sameEntry } from '../src/lib/entries'
+import { imageFields, looksLikeQuestion, missingSlots, parseAlternates, questionImages, questionRefersToImage, sameEntry } from '../src/lib/entries'
 import { isCorrectAnswer, normalizeAnswer } from '../src/lib/normalize'
 import { review } from '../src/lib/srs'
 import type { Word, WordProgress } from '../src/lib/types'
@@ -316,5 +316,37 @@ describe('correction des réponses longues', () => {
     expect(gradeAnswer('Monet', ['Claude Monet'], [], false).correct).toBe(false)
     expect(gradeAnswer('claude monet', ['Claude Monet'], [], false).correct).toBe(true)
     expect(tokenize('Il aime la vie', true).some((t) => t.num !== null)).toBe(false)
+  })
+})
+
+describe('deux images : l’œuvre et l’artiste', () => {
+  const base = { ...word('Pablo Picasso', 'Qui a peint Guernica ?', 'peintres'), kind: 'question' as const }
+
+  it('anciennes questions à une image : lues sans migration', () => {
+    expect(questionImages({ ...base, imageId: 'a' })).toEqual({ clue: null, answer: { id: 'a', credit: null } })
+    expect(questionImages({ ...base, imageId: 'a', imageAsClue: true })).toEqual({ clue: { id: 'a', credit: null }, answer: null })
+  })
+
+  it('aller-retour des deux emplacements', () => {
+    const clue = { id: 'tableau', credit: 'Commons' }
+    const answer = { id: 'portrait', credit: null }
+    expect(questionImages({ ...base, ...imageFields(clue, answer) })).toEqual({ clue, answer })
+    expect(questionImages({ ...base, ...imageFields(null, answer) })).toEqual({ clue: null, answer })
+  })
+
+  it('images manquantes : l’œuvre et le peintre pour un tableau', () => {
+    expect(missingSlots(base, 'Peintres')).toEqual(['clue', 'answer'])
+    // une illustration de la réponse existe déjà (le portrait) : il ne manque que le tableau
+    expect(missingSlots({ ...base, imageId: 'portrait' }, 'Peintres')).toEqual(['clue'])
+    const monument = { ...word('Tour Eiffel', 'Quel est ce monument ?', 'monuments'), kind: 'question' as const }
+    expect(missingSlots(monument, 'Monuments')).toEqual(['clue'])
+    expect(missingSlots({ ...monument, imageId: 'x', imageAsClue: true }, 'Monuments')).toEqual([])
+  })
+
+  it('recherche : l’œuvre pour la question, le peintre pour la réponse', () => {
+    expect(clueImageQuery('Qui a peint Guernica ?', 'Pablo Picasso')).toBe('Guernica')
+    expect(clueImageQuery('Qui a peint la Joconde ?', 'Léonard de Vinci')).toBe('la Joconde')
+    expect(clueImageQuery('Qui a peint ce tableau ?', 'Claude Monet')).toBe('Claude Monet')
+    expect(defaultImageQuery('Pablo Picasso', 'Qui a peint Guernica ?')).toBe('Pablo Picasso')
   })
 })

@@ -135,3 +135,18 @@ export function defaultImageQuery(answer: string, question: string): string {
     .trim()
   return subject || a.slice(0, 60)
 }
+
+/**
+ * Recherche proposée pour l'image de la question (l'indice) : le sujet de la
+ * question (« Qui a peint Guernica ? » → « Guernica »). Si la question désigne
+ * simplement l'image (« ce tableau »), on part de la réponse.
+ */
+export function clueImageQuery(question: string, answer: string): string {
+  const subject = question
+    .replace(/^(?:qui|quels?|quelles?|où|ou|de qui)(?:\s+\S+)*?\s+(?:a peint|a réalisé|a sculpté|a écrit|a composé|a construit|est l'auteur d[eu]|est l’auteur d[eu]|est|sont|se trouve(?:nt)?)\s+/iu, '')
+    .replace(/\s*\?\s*$/, '')
+    .trim()
+  const demonstrative = /^(?:ce|cet|cette|ces)\s/iu.test(subject) || /^qui est-ce/iu.test(question)
+  if (subject && subject !== question.replace(/\s*\?\s*$/, '').trim() && !demonstrative) return subject
+  return defaultImageQuery(answer, question)
+}

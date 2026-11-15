@@ -21,6 +21,9 @@ export interface ImportRow {
   image?: string | null
   imageCredit?: string | null
   imageAsClue?: boolean
+  /** Seconde image (avec la réponse), en data URL. */
+  answerImage?: string | null
+  answerImageCredit?: string | null
   keywords?: string[]
   /** Empreinte de l'image, calculée avant l'import (détection des doublons). */
   imageId?: string | null
@@ -170,6 +173,8 @@ export interface LexioExport {
     image?: string | null
     imageCredit?: string | null
     imageAsClue?: boolean
+    answerImage?: string | null
+    answerImageCredit?: string | null
     keywords?: string[]
     progress?: RestoredProgress
   }[]
@@ -210,7 +215,14 @@ export function toJsonExport(
         if (w.keywords?.length) entry.keywords = w.keywords
         entry.image = w.imageId ? (images.get(w.imageId) ?? null) : null
         if (entry.image && w.imageCredit) entry.imageCredit = w.imageCredit
-        if (entry.image && w.imageAsClue) entry.imageAsClue = true
+        if (entry.image && w.imageAsClue) {
+          entry.imageAsClue = true
+          const second = w.answerImageId ? images.get(w.answerImageId) : undefined
+          if (second) {
+            entry.answerImage = second
+            if (w.answerImageCredit) entry.answerImageCredit = w.answerImageCredit
+          }
+        }
       }
       if (p) {
         const { wordId: _omit, ...rest } = p
@@ -256,6 +268,8 @@ export function parseJsonImport(text: string): ImportParseResult {
       row.image = typeof o.image === 'string' && o.image.startsWith('data:image/') ? o.image : null
       row.imageCredit = row.image && typeof o.imageCredit === 'string' ? o.imageCredit.slice(0, 500) : null
       row.imageAsClue = !!row.image && o.imageAsClue === true
+      row.answerImage = row.imageAsClue && typeof o.answerImage === 'string' && o.answerImage.startsWith('data:image/') ? o.answerImage : null
+      row.answerImageCredit = row.answerImage && typeof o.answerImageCredit === 'string' ? o.answerImageCredit.slice(0, 500) : null
     }
     const p = parseProgressEntry(o.progress)
     if (p) row.progress = p

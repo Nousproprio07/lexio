@@ -11,7 +11,7 @@
  */
 import type { Category, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
 import { entryKind } from '../lib/types'
-import { sameEntry } from '../lib/entries'
+import { imageFields, questionImages, sameEntry, type ImageRef } from '../lib/entries'
 import { imageIdOf } from '../lib/image'
 import { textKey } from '../lib/normalize'
 import { DuplicateError, uuid, type Repository, type Snapshot, type WordInput } from './repository'
@@ -266,11 +266,13 @@ export class LocalRepository implements Repository {
     return new Blob([await openBytes(this.space, stored.sealed)], { type: stored.type })
   }
 
-  async addImageToQuestion(id: string, imageId: string, credit: string | null, asClue: boolean): Promise<Word> {
+  async addImageToQuestion(id: string, slot: 'clue' | 'answer', image: ImageRef): Promise<Word> {
     const prev = this.db.words.find((w) => w.id === id)
     if (!prev || prev.kind !== 'question') throw new Error('Question introuvable.')
-    if (prev.imageId) throw new Error('Cette question a déjà une image.')
-    const w: Word = { ...prev, imageId, imageCredit: credit, imageAsClue: asClue, updatedAt: new Date().toISOString() }
+    const { clue, answer } = questionImages(prev)
+    if (slot === 'clue' ? clue : answer) throw new Error('Cette question a déjà cette image.')
+    const fields = slot === 'clue' ? imageFields(image, answer) : imageFields(clue, image)
+    const w: Word = { ...prev, ...fields, updatedAt: new Date().toISOString() }
     this.db = { ...this.db, words: this.db.words.map((x) => (x.id === id ? w : x)) }
     await this.save()
     return w
@@ -278,7 +280,7 @@ export class LocalRepository implements Repository {
 
   /** Supprime les images que plus aucune question n'utilise. */
   private async dropImages(ids: (string | null | undefined)[]) {
-    const used = new Set(this.db.words.map((w) => w.imageId).filter(Boolean))
+    const used = new Set(this.db.words.flatMap((w) => [w.imageId, w.answerImageId]).filter(Boolean))
     for (const id of new Set(ids)) if (id && !used.has(id)) await this.store.del(this.imageKey(id)).catch(() => {})
   }
 
@@ -341,12 +343,14 @@ export class LocalRepository implements Repository {
       delete w.imageId
       delete w.imageCredit
       delete w.imageAsClue
+      delete w.answerImageId
+      delete w.answerImageCredit
       delete w.alternates
       delete w.keywords
     }
     this.db = { ...this.db, words: this.db.words.map((x) => (x.id === id ? w : x)) }
     await this.save()
-    if (prev.imageId !== w.imageId) await this.dropImages([prev.imageId])
+    await this.dropImages([prev.imageId, prev.answerImageId])
     return w
   }
 
@@ -359,7 +363,7 @@ export class LocalRepository implements Repository {
       answers: this.db.answers.map((a) => (a.wordId === id ? { ...a, wordId: null } : a)),
     }
     await this.save()
-    await this.dropImages([prev?.imageId])
+    await this.dropImages([prev?.imageId, prev?.answerImageId])
   }
 
   async upsertProgress(items: WordProgress[]): Promise<void> {

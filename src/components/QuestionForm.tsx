@@ -1,17 +1,16 @@
-import { ArrowUpDown, Globe, ImagePlus, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { parseAlternates, questionRefersToImage } from '../lib/entries'
+import { ArrowUpDown, Plus } from 'lucide-react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { imageFields, parseAlternates, questionImages, type ImageRef } from '../lib/entries'
 import { autoKeywords, isLongAnswer } from '../lib/grading'
 import { compressImage } from '../lib/image'
 import { textKey } from '../lib/normalize'
 import { LIMITS } from '../lib/transfer'
-import { defaultImageQuery } from '../lib/wiki'
+import { clueImageQuery, defaultImageQuery } from '../lib/wiki'
 import { isQuestion, type Word } from '../lib/types'
 import { useData, type WordDraft } from '../state/data'
 import { useToast } from '../state/toast'
-import { QuestionImage } from './QuestionImage'
+import { emptySlot, ImageSlot, slotFilled, type SlotValue } from './ImageSlot'
 import { Modal, Spinner } from './ui'
-import { WikiImagePicker } from './WikiImagePicker'
 import { errorMessage } from './WordDialogs'
 
 /** Catégories proposées pour la culture générale. */
@@ -27,16 +26,10 @@ interface FormState {
   keywords: string
   category: string
   example: string
-  /** Image déjà enregistrée. */
-  imageId: string | null
-  /** Nouvelle image choisie, pas encore enregistrée. */
-  image: Blob | null
-  /** Attribution de l'image (Wikipédia / Commons) ; null pour une photo personnelle. */
-  imageCredit: string | null
-  /** Image montrée avec la question (indice) plutôt qu'avec la réponse. */
-  imageAsClue: boolean
-  /** Case modifiée à la main : on ne la coche plus automatiquement. */
-  clueTouched: boolean
+  /** Image montrée avec la question (indice) : le tableau, le monument… */
+  clue: SlotValue
+  /** Image montrée avec la réponse : le portrait du peintre, la photo du lieu… */
+  answerImage: SlotValue
 }
 
 const emptyForm: FormState = {
@@ -46,12 +39,11 @@ const emptyForm: FormState = {
   keywords: '',
   category: '',
   example: '',
-  imageId: null,
-  image: null,
-  imageCredit: null,
-  imageAsClue: false,
-  clueTouched: false,
+  clue: emptySlot,
+  answerImage: emptySlot,
 }
+
+const slotOf = (ref: ImageRef | null): SlotValue => (ref ? { id: ref.id, blob: null, credit: ref.credit } : emptySlot)
 
 /**
  * Création, modification d'une question de culture générale, ou transformation
@@ -74,12 +66,8 @@ export function QuestionFormDialog({
   const [form, setForm] = useState<FormState>(emptyForm)
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [preparing, setPreparing] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState(0)
-  /** Recherche d'image Wikipédia ouverte (texte de départ), ou null. */
-  const [webSearch, setWebSearch] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
   const converting = !!word && !isQuestion(word)
 
   // (ré)initialisation à chaque ouverture
@@ -94,11 +82,8 @@ export function QuestionFormDialog({
         keywords: (word.keywords ?? []).join(', '),
         category: categoryName(word.categoryId) ?? '',
         example: word.example ?? '',
-        imageId: word.imageId ?? null,
-        image: null,
-        imageCredit: word.imageCredit ?? null,
-        imageAsClue: !!word.imageAsClue,
-        clueTouched: true,
+        clue: slotOf(questionImages(word).clue),
+        answerImage: slotOf(questionImages(word).answer),
       })
     else {
       // mot rangé dans « Mots » : la question est le plus souvent dans le champ qui se termine par « ? »
@@ -114,12 +99,11 @@ export function QuestionFormDialog({
     setSubmitted(false)
     setServerError(null)
     setSavedCount(0)
-    setWebSearch(null)
   }, [open, word, categoryName])
 
-  // aperçu de la nouvelle image
-  const previewUrl = useMemo(() => (form.image ? URL.createObjectURL(form.image) : null), [form.image])
-  useEffect(() => () => void (previewUrl && URL.revokeObjectURL(previewUrl)), [previewUrl])
+  // images déjà enregistrées ; une nouvelle image n'a pas encore d'identifiant
+  const refOf = (v: SlotValue): ImageRef | null => (v.id ? { id: v.id, credit: v.credit } : null)
+  const hasNewImage = !!form.clue.blob || !!form.answerImage.blob
 
   const draft: WordDraft = {
     kind: 'question',
@@ -127,14 +111,12 @@ export function QuestionFormDialog({
     definition: form.question.trim(),
     example: form.example.trim() || null,
     categoryName: form.category.trim() || null,
-    imageId: form.imageId,
-    imageCredit: form.imageCredit,
-    imageAsClue: form.imageAsClue,
+    ...imageFields(refOf(form.clue), refOf(form.answerImage)),
     alternates: parseAlternates(form.alternates),
     keywords: parseAlternates(form.keywords),
   }
   // une nouvelle image rend la question distincte : pas de doublon possible avant l'enregistrement
-  const duplicate = draft.term && draft.definition && !form.image ? findDuplicate(draft, word?.id) : undefined
+  const duplicate = draft.term && draft.definition && !hasNewImage ? findDuplicate(draft, word?.id) : undefined
   const errors = {
     question: !draft.definition ? 'Indiquez la question.' : draft.definition.length > LIMITS.definition ? `${LIMITS.definition} caractères maximum.` : null,
     answer: !draft.term ? 'Indiquez la bonne réponse.' : draft.term.length > LIMITS.answer ? `${LIMITS.answer} caractères maximum.` : null,
@@ -152,39 +134,40 @@ export function QuestionFormDialog({
     return [...names, ...SUGGESTED_CULTURE_CATEGORIES.filter((s) => !known.has(textKey(s)))]
   }, [categories, words])
 
-  const pickImage = async (file: Blob) => {
-    setPreparing(true)
+  /** Image collée : elle va dans le premier emplacement libre (question, puis réponse). */
+  const pasteImage = async (file: Blob) => {
     setServerError(null)
     try {
-      const image = await compressImage(file)
-      setForm((f) => ({ ...f, image, imageId: null, imageCredit: null }))
+      const blob = await compressImage(file)
+      setForm((f) => {
+        const value: SlotValue = { id: null, blob, credit: null }
+        return !slotFilled(f.clue) ? { ...f, clue: value } : { ...f, answerImage: value }
+      })
     } catch (e) {
       setServerError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setPreparing(false)
     }
   }
+
+  const upload = async (v: SlotValue): Promise<ImageRef | null> => (v.blob ? { id: await saveImage(v.blob), credit: v.credit } : refOf(v))
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setSubmitted(true)
     setServerError(null)
-    if (invalid || preparing) {
+    if (invalid) {
       document.querySelector<HTMLElement>('#question-form [aria-invalid="true"]')?.focus()
       return
     }
     setSaving(true)
     try {
-      const imageId = form.image ? await saveImage(form.image) : form.imageId
-      await saveWord({ ...draft, imageId }, word?.id)
+      await saveWord({ ...draft, ...imageFields(await upload(form.clue), await upload(form.answerImage)) }, word?.id)
       if (word) {
         notify(converting ? 'Transformé en question de culture générale' : 'Modifications enregistrées')
         onClose()
       } else {
         notify('Question ajoutée')
         // prêt pour la suivante : on garde la question type et la catégorie, souvent les mêmes
-        setForm({ ...emptyForm, question: form.question, category: form.category, imageAsClue: form.imageAsClue, clueTouched: form.clueTouched })
-        setWebSearch(null)
+        setForm({ ...emptyForm, question: form.question, category: form.category })
         setSubmitted(false)
         setSavedCount((n) => n + 1)
       }
@@ -195,21 +178,13 @@ export function QuestionFormDialog({
     }
   }
 
-  const openWebSearch = () => setWebSearch(defaultImageQuery(form.answer, form.question))
-
-  // « Qui est-ce ? », « ce tableau »… : la case se coche toute seule tant qu'on ne l'a pas touchée
-  const withQuestion = (f: FormState, question: string): FormState => ({
-    ...f,
-    question,
-    imageAsClue: f.clueTouched ? f.imageAsClue : questionRefersToImage(question),
-  })
+  const withQuestion = (f: FormState, question: string): FormState => ({ ...f, question })
   const longAnswer = isLongAnswer(form.answer)
   const detected = useMemo(() => (longAnswer ? autoKeywords(form.answer).keywords.map((k) => k.label) : []), [longAnswer, form.answer])
 
   const set = (k: 'question' | 'answer' | 'alternates' | 'keywords' | 'category' | 'example') => (e: { target: { value: string } }) =>
     setForm((f) => (k === 'question' ? withQuestion(f, e.target.value) : { ...f, [k]: e.target.value }))
   const show = (msg: string | null) => (submitted ? msg : null)
-  const hasImage = !!form.image || !!form.imageId
 
   return (
     <Modal
@@ -226,7 +201,7 @@ export function QuestionFormDialog({
           <button type="button" className="btn-secondary" onClick={onClose}>
             {savedCount > 0 ? 'Terminer' : 'Annuler'}
           </button>
-          <button type="submit" form="question-form" className="btn-primary" disabled={saving || preparing}>
+          <button type="submit" form="question-form" className="btn-primary" disabled={saving}>
             {saving ? <Spinner /> : !word && <Plus className="size-4.5" aria-hidden />}
             {converting ? 'Transformer' : word ? 'Enregistrer les modifications' : 'Enregistrer la question'}
           </button>
@@ -243,7 +218,7 @@ export function QuestionFormDialog({
           const file = [...e.clipboardData.items].find((i) => i.type.startsWith('image/'))?.getAsFile()
           if (file) {
             e.preventDefault()
-            void pickImage(file)
+            void pasteImage(file)
           }
         }}
       >
@@ -253,107 +228,14 @@ export function QuestionFormDialog({
           </p>
         )}
 
-        <div>
-          <span className="label">
-            Image <span className="font-normal text-muted">(facultatif)</span>
-          </span>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            className="sr-only"
-            tabIndex={-1}
-            aria-label="Choisir une image"
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              e.target.value = ''
-              if (f) void pickImage(f)
-            }}
-          />
-          {webSearch !== null ? (
-            <div className="rounded-2xl border border-line p-3">
-              <WikiImagePicker
-                initialQuery={webSearch}
-                onPick={(image, imageCredit) => {
-                  setForm((f) => ({ ...f, image, imageId: null, imageCredit }))
-                  setWebSearch(null)
-                }}
-              />
-              <button type="button" className="btn-ghost mt-2 w-full" onClick={() => setWebSearch(null)}>
-                Fermer la recherche
-              </button>
-            </div>
-          ) : hasImage || preparing ? (
-            <div className="relative overflow-hidden rounded-2xl border border-line bg-slate-50">
-              {preparing ? (
-                <div className="flex h-48 items-center justify-center">
-                  <Spinner className="size-5 text-brand" />
-                </div>
-              ) : previewUrl ? (
-                <img src={previewUrl} alt="Image de la question" className="max-h-64 w-full object-contain" />
-              ) : (
-                <QuestionImage imageId={form.imageId} alt="Image de la question" className="h-64 w-full" />
-              )}
-              {!preparing && (
-                <div className="absolute right-2 bottom-2 flex gap-1.5">
-                  <button type="button" className="btn-secondary h-9 px-3 text-sm shadow-sm" onClick={openWebSearch}>
-                    <Globe className="size-4 text-brand" aria-hidden />
-                    Chercher
-                  </button>
-                  <button type="button" className="btn-secondary h-9 px-3 text-sm shadow-sm" onClick={() => fileRef.current?.click()}>
-                    Changer
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary h-9 px-2.5 text-danger shadow-sm"
-                    aria-label="Retirer l'image"
-                    onClick={() => setForm((f) => ({ ...f, image: null, imageId: null, imageCredit: null }))}
-                  >
-                    <Trash2 className="size-4" aria-hidden />
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={openWebSearch}
-                className="flex h-32 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-brand/40 bg-brand-soft/40 px-2 text-center text-brand transition-colors hover:border-brand"
-              >
-                <Globe className="size-7" aria-hidden />
-                <span className="text-[15px] font-medium">Chercher une vraie image</span>
-                <span className="text-xs text-muted">Artiste, œuvre, lieu (Wikipédia)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                className="flex h-32 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-line px-2 text-center text-muted transition-colors hover:border-brand hover:text-brand"
-              >
-                <ImagePlus className="size-7" aria-hidden />
-                <span className="text-[15px] font-medium">Ajouter une photo</span>
-                <span className="text-xs">Depuis l’appareil, ou collez une image</span>
-              </button>
-            </div>
-          )}
-          {webSearch === null && form.imageCredit && (hasImage || preparing) && <p className="mt-1.5 text-xs break-words text-muted">{form.imageCredit}</p>}
-          {webSearch === null && (hasImage || preparing) && (
-            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-line px-3.5 py-3">
-              <input
-                type="checkbox"
-                className="mt-0.5 size-5 shrink-0 accent-(--color-brand)"
-                checked={form.imageAsClue}
-                onChange={(e) => setForm((f) => ({ ...f, imageAsClue: e.target.checked, clueTouched: true }))}
-              />
-              <span>
-                <span className="block text-[15px] font-medium">Montrer l’image avec la question</span>
-                <span className="block text-sm text-muted">
-                  À cocher quand il faut reconnaître le personnage, l’œuvre ou le lieu sur l’image. Sinon, elle s’affiche avec la réponse.
-                </span>
-              </span>
-            </label>
-          )}
-        </div>
+        <ImageSlot
+          label="Image de la question"
+          hint="Montrée avec la question, comme indice : le tableau, le monument, la personne à reconnaître."
+          value={form.clue}
+          onChange={(clue) => setForm((f) => ({ ...f, clue }))}
+          searchQuery={() => clueImageQuery(form.question, form.answer)}
+          onError={setServerError}
+        />
 
         <Field label="Question" error={show(errors.question)} htmlFor="qf-question">
           <textarea
@@ -412,6 +294,15 @@ export function QuestionFormDialog({
             </button>
           </div>
         )}
+
+        <ImageSlot
+          label="Image de la réponse"
+          hint="Montrée après votre réponse : le portrait du peintre, la photo du lieu…"
+          value={form.answerImage}
+          onChange={(answerImage) => setForm((f) => ({ ...f, answerImage }))}
+          searchQuery={() => defaultImageQuery(form.answer, form.question)}
+          onError={setServerError}
+        />
 
         <Field label="Autres réponses acceptées" optional error={show(errors.alternates)} htmlFor="qf-alt">
           <input

@@ -1,3 +1,4 @@
+import type { ImageRef } from '../lib/entries'
 import type { Category, EntryKind, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
 
 export interface WordInput {
@@ -9,6 +10,8 @@ export interface WordInput {
   imageId?: string | null
   imageCredit?: string | null
   imageAsClue?: boolean
+  answerImageId?: string | null
+  answerImageCredit?: string | null
   alternates?: string[]
   keywords?: string[]
 }
@@ -47,9 +50,10 @@ export interface Repository {
   getImage(id: string): Promise<Blob | null>
   /**
    * Illustre une question existante sans rien changer d'autre (ni la question,
-   * ni la réponse, ni la progression). Refuse si elle a déjà une image.
+   * ni la réponse, ni la progression) : remplit l'emplacement demandé
+   * (image de la question ou de la réponse). Refuse s'il est déjà occupé.
    */
-  addImageToQuestion(id: string, imageId: string, credit: string | null, asClue: boolean): Promise<Word>
+  addImageToQuestion(id: string, slot: 'clue' | 'answer', image: ImageRef): Promise<Word>
 }
 
 export function uuid(): string {

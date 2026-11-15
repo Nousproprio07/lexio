@@ -3,6 +3,7 @@
  * Toutes les fonctions sont pures ; l'aléatoire est injecté (`rng`) pour les tests.
  */
 import { isDueToday } from './srs'
+import { imageFields, questionImages } from './entries'
 import { textKey } from './normalize'
 import { entryKind, isQuestion, type EntryKind, type QuestionKind, type QuizMode, type Status, type Word, type WordProgress } from './types'
 
@@ -146,6 +147,9 @@ export interface Question {
   imageCredit?: string | null
   /** L'image est l'indice (affichée avec la question) ; sinon elle n'apparaît qu'avec la réponse. */
   imageAsClue?: boolean
+  /** Image montrée avec la réponse quand la première est l'indice (lire via questionImages()). */
+  answerImageId?: string | null
+  answerImageCredit?: string | null
   /** Culture, saisie d'une réponse longue : mots-clés imposés (sinon détectés automatiquement). */
   keywords?: string[]
   /** Saisie : orthographes acceptées (mode A : mots partageant cette définition ; culture : réponse et variantes). */
@@ -301,9 +305,7 @@ function buildCultureQuestion(
     definition: w.definition,
     example: w.example,
     categoryName: categoryName(w.categoryId),
-    imageId: w.imageId ?? null,
-    imageCredit: w.imageId ? (w.imageCredit ?? null) : null,
-    imageAsClue: !!w.imageId && !!w.imageAsClue,
+    ...imageFields(questionImages(w).clue, questionImages(w).answer),
     keywords: w.keywords ?? [],
     accepted: kind === 'answer' ? [w.term, ...(w.alternates ?? [])] : [],
     options,

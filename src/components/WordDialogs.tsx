@@ -1,6 +1,7 @@
 import { CalendarClock, Landmark, Pencil, Plus, Trash2 } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { DuplicateError } from '../data/repository'
+import { questionImages } from '../lib/entries'
 import { textKey } from '../lib/normalize'
 import { LIMITS } from '../lib/transfer'
 import { isQuestion, type Word } from '../lib/types'
@@ -424,15 +425,32 @@ function WordDetailDialog({ wordId, onClose }: { wordId: string | null; onClose:
           </div>
           {question ? (
             <>
-              {word.imageId && (
-                <figure>
-                  <QuestionImage imageId={word.imageId} alt={`Image de la question : ${word.term}`} className="max-h-80 w-full rounded-2xl bg-slate-50" />
-                  <figcaption className="mt-1.5 text-xs break-words text-muted">
-                    {word.imageAsClue ? 'Montrée avec la question (indice).' : 'Montrée avec la réponse.'}
-                    {word.imageCredit && <> Image : {word.imageCredit}</>}
-                  </figcaption>
-                </figure>
-              )}
+              {(() => {
+                const { clue, answer } = questionImages(word)
+                if (!clue && !answer) return null
+                return (
+                  <div className={clue && answer ? 'grid grid-cols-2 gap-3' : ''}>
+                    {[
+                      { ref: clue, label: 'Avec la question' },
+                      { ref: answer, label: 'Avec la réponse' },
+                    ].map(
+                      ({ ref, label }) =>
+                        ref && (
+                          <figure key={label}>
+                            <QuestionImage
+                              imageId={ref.id}
+                              alt={`${label} : ${word.term}`}
+                              className={`w-full rounded-2xl bg-slate-50 ${clue && answer ? 'h-44' : 'max-h-80'}`}
+                            />
+                            <figcaption className="mt-1.5 text-xs break-words text-muted">
+                              {label}.{ref.credit && <> Image : {ref.credit}</>}
+                            </figcaption>
+                          </figure>
+                        ),
+                    )}
+                  </div>
+                )
+              })()}
               <section>
                 <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Question</h3>
                 <p className="text-[16px] leading-relaxed break-words whitespace-pre-line">{word.definition}</p>

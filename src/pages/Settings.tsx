@@ -38,7 +38,7 @@ export function SettingsPage() {
     try {
       // les images des questions sont incluses dans la sauvegarde
       const images = new Map<string, string>()
-      for (const id of new Set(words.map((w) => w.imageId).filter((id): id is string => !!id))) {
+      for (const id of new Set(words.flatMap((w) => [w.imageId, w.answerImageId]).filter((id): id is string => !!id))) {
         const blob = await repo.getImage(id)
         if (blob) images.set(id, await blobToDataUrl(blob))
       }
@@ -176,6 +176,7 @@ function ImportSection() {
       const drafts = []
       for (const r of parsed.fresh) {
         const blob = r.image ? dataUrlToBlob(r.image) : null
+        const answerBlob = r.answerImage ? dataUrlToBlob(r.answerImage) : null
         drafts.push({
           kind: r.kind,
           term: r.term,
@@ -187,6 +188,8 @@ function ImportSection() {
           imageAsClue: r.imageAsClue,
           keywords: r.keywords,
           imageId: blob ? await saveImage(blob) : null,
+          answerImageId: answerBlob ? await saveImage(answerBlob) : null,
+          answerImageCredit: r.answerImageCredit,
         })
       }
       const n = await importWords(drafts, (d, i) => parsed.fresh[i].progress ?? parsed.progress?.get(wordKey(d.term, d.categoryName)))
