@@ -8,6 +8,7 @@ export interface WordInput {
   categoryId: string | null
   imageId?: string | null
   imageCredit?: string | null
+  imageAsClue?: boolean
   alternates?: string[]
 }
 
@@ -47,7 +48,7 @@ export interface Repository {
    * Illustre une question existante sans rien changer d'autre (ni la question,
    * ni la réponse, ni la progression). Refuse si elle a déjà une image.
    */
-  addImageToQuestion(id: string, imageId: string, credit: string | null): Promise<Word>
+  addImageToQuestion(id: string, imageId: string, credit: string | null, asClue: boolean): Promise<Word>
 }
 
 export function uuid(): string {

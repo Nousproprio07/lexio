@@ -32,6 +32,11 @@ export interface Word {
   imageId?: string | null
   /** Question : auteur et licence de l'image quand elle vient de Wikipédia / Wikimedia Commons. */
   imageCredit?: string | null
+  /**
+   * Question : l'image est l'indice (personnage, œuvre à reconnaître) et
+   * s'affiche avec la question. Sinon elle illustre la réponse et n'apparaît qu'après.
+   */
+  imageAsClue?: boolean
   /** Question : autres réponses acceptées en saisie (« Monet » pour « Claude Monet »). */
   alternates?: string[]
   createdAt: string

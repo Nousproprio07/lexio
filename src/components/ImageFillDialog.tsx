@@ -1,5 +1,6 @@
 import { Check, SkipForward } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { questionRefersToImage } from '../lib/entries'
 import { defaultImageQuery } from '../lib/wiki'
 import { useData } from '../state/data'
 import { useToast } from '../state/toast'
@@ -45,7 +46,8 @@ export function ImageFillDialog({ open, onClose }: { open: boolean; onClose: () 
     if (!current || current.imageId) return
     setSaving(true)
     try {
-      await addImageToQuestion(current.id, image, credit)
+      // « Qui est-ce ? » : l'image est l'indice ; sinon elle illustre la réponse (modifiable ensuite)
+      await addImageToQuestion(current.id, image, credit, questionRefersToImage(current.definition))
       setAdded((n) => n + 1)
       setIndex((i) => i + 1)
     } catch (e) {

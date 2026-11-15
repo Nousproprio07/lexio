@@ -14,7 +14,7 @@ import {
   type SessionSize,
 } from '../src/lib/quiz'
 import { defaultImageQuery, formatCredit } from '../src/lib/wiki'
-import { looksLikeQuestion, parseAlternates, sameEntry } from '../src/lib/entries'
+import { looksLikeQuestion, parseAlternates, questionRefersToImage, sameEntry } from '../src/lib/entries'
 import { isCorrectAnswer, normalizeAnswer } from '../src/lib/normalize'
 import { review } from '../src/lib/srs'
 import type { Word, WordProgress } from '../src/lib/types'
@@ -255,6 +255,18 @@ describe('culture générale', () => {
     expect(looksLikeQuestion(word('Tour Eiffel', 'Monument parisien'), 'Culture générale')).toBe(true)
     expect(looksLikeQuestion(word('Résilience', 'Capacité…'), 'Français')).toBe(false)
     expect(parseAlternates('Monet, C. Monet ; monet')).toEqual(['Monet', 'C. Monet'])
+  })
+
+  it('image indice ou illustration de la réponse', () => {
+    expect(questionRefersToImage('Qui est-ce ?')).toBe(true)
+    expect(questionRefersToImage('Qui a peint ce tableau ?')).toBe(true)
+    expect(questionRefersToImage('Quelle est cette œuvre ?')).toBe(true)
+    expect(questionRefersToImage('Qui a peint Guernica ?')).toBe(false)
+    expect(questionRefersToImage('Où se trouve le musée du Prado ?')).toBe(false)
+    const [hint] = buildQuestions([{ ...painters[0], imageAsClue: true }], all, 'definition', catName, seededRng(1))
+    expect(hint.imageAsClue).toBe(true)
+    const [illustration] = buildQuestions([painters[0]], all, 'definition', catName, seededRng(1))
+    expect(illustration.imageAsClue).toBe(false)
   })
 })
 

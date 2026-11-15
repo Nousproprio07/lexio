@@ -21,6 +21,7 @@ export interface WordDraft {
   categoryName: string | null
   imageId?: string | null
   imageCredit?: string | null
+  imageAsClue?: boolean
   alternates?: string[]
 }
 
@@ -51,7 +52,7 @@ interface DataApi {
   /** Enregistre une image (chiffrée) et renvoie son identifiant. */
   saveImage(blob: Blob): Promise<string>
   /** Ajoute une image à une question qui n'en a pas, sans rien modifier d'autre. */
-  addImageToQuestion(id: string, image: Blob, credit: string | null): Promise<Word>
+  addImageToQuestion(id: string, image: Blob, credit: string | null, asClue: boolean): Promise<Word>
   deleteWord(id: string): Promise<void>
   renameCategory(id: string, name: string): Promise<void>
   deleteCategory(id: string): Promise<void>
@@ -71,6 +72,7 @@ function toInput(d: WordDraft, categoryId: string | null): WordInput {
     kind: 'question',
     imageId: d.imageId ?? null,
     imageCredit: d.imageId ? (d.imageCredit ?? null) : null,
+    imageAsClue: !!d.imageId && !!d.imageAsClue,
     alternates: d.alternates ?? [],
   }
 }
@@ -178,8 +180,8 @@ export function DataProvider({ repo, onLock, children }: { repo: LocalRepository
   const saveImage = useCallback((blob: Blob) => repo.putImage(blob), [repo])
 
   const addImageToQuestion = useCallback(
-    async (id: string, image: Blob, credit: string | null) => {
-      const saved = await repo.addImageToQuestion(id, await repo.putImage(image), credit)
+    async (id: string, image: Blob, credit: string | null, asClue: boolean) => {
+      const saved = await repo.addImageToQuestion(id, await repo.putImage(image), credit, asClue)
       setWords((ws) => ws.map((w) => (w.id === id ? saved : w)))
       return saved
     },

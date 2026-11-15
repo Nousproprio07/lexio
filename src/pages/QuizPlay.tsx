@@ -91,7 +91,7 @@ const isCulture = (q: Question) => q.kind === 'answer' || q.kind === 'choice' ||
 function CulturePrompt({ q }: { q: Question }) {
   return (
     <div className="card overflow-hidden text-center">
-      {q.imageId && <QuestionImage imageId={q.imageId} alt="Image de la question" className="h-[min(48dvh,26rem)] w-full bg-slate-50" />}
+      {q.imageId && q.imageAsClue && <QuestionImage imageId={q.imageId} alt="Image de la question" className="h-[min(48dvh,26rem)] w-full bg-slate-50" />}
       <div className="px-5 py-5 md:px-8 md:py-6">
         {q.categoryName && <p className="text-xs font-semibold tracking-wider text-brand uppercase">{q.categoryName}</p>}
         <p className="mx-auto mt-1.5 max-w-prose text-[19px] leading-snug font-semibold break-words text-balance whitespace-pre-line md:text-2xl">
@@ -102,10 +102,13 @@ function CulturePrompt({ q }: { q: Question }) {
   )
 }
 
-/** Après la réponse à une question de culture générale. */
+/** Après la réponse à une question de culture générale (avec l'image, si elle illustre la réponse). */
 function CultureExplain({ q }: { q: Question }) {
   return (
     <>
+      {q.imageId && !q.imageAsClue && (
+        <QuestionImage imageId={q.imageId} alt={`Illustration de la réponse : ${q.term}`} className="mb-3 h-[min(40dvh,22rem)] w-full rounded-xl bg-white/60" />
+      )}
       <p className={`font-bold tracking-tight break-words whitespace-pre-line ${q.term.length > 60 ? 'text-lg leading-snug' : 'text-2xl'}`}>{q.term}</p>
       {q.example && <p className="mt-2 leading-relaxed whitespace-pre-line text-slate-700">{q.example}</p>}
       {q.imageCredit && <p className="mt-3 text-xs break-words text-slate-500">Image : {q.imageCredit}</p>}

@@ -18,6 +18,13 @@ export function sameEntry(a: EntryLike, b: EntryLike): boolean {
   return !isQuestion(a) || (textKey(a.definition) === textKey(b.definition) && (a.imageId ?? null) === (b.imageId ?? null))
 }
 
+/** La question désigne l'image (« Qui est-ce ? », « ce tableau »…) : l'image en est l'indice. */
+export function questionRefersToImage(question: string): boolean {
+  return /\b(?:qui est-ce|c'est qui|ce (?:tableau|monument|lieu|personnage|bâtiment|portrait|paysage|site|musée|château|pont|édifice)|cette (?:œuvre|oeuvre|personne|peinture|sculpture|statue|photo|image|ville|église|cathédrale|place)|ces? (?:personnes|monuments))\b/iu.test(
+    question.replace(/[’]/g, "'"),
+  )
+}
+
 /** « Monet, C. Monet » → ['Monet', 'C. Monet'] (vides et doublons retirés). */
 export function parseAlternates(text: string): string[] {
   const seen = new Set<string>()

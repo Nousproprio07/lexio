@@ -20,6 +20,7 @@ export interface ImportRow {
   /** Image en data URL, telle qu'enregistrée dans la sauvegarde. */
   image?: string | null
   imageCredit?: string | null
+  imageAsClue?: boolean
   /** Empreinte de l'image, calculée avant l'import (détection des doublons). */
   imageId?: string | null
   /** Progression enregistrée avec l'entrée (sauvegardes récentes). */
@@ -167,6 +168,7 @@ export interface LexioExport {
     alternates?: string[]
     image?: string | null
     imageCredit?: string | null
+    imageAsClue?: boolean
     progress?: RestoredProgress
   }[]
   /** Anciennes sauvegardes : progression à part, retrouvée par mot + catégorie. */
@@ -205,6 +207,7 @@ export function toJsonExport(
         entry.alternates = w.alternates ?? []
         entry.image = w.imageId ? (images.get(w.imageId) ?? null) : null
         if (entry.image && w.imageCredit) entry.imageCredit = w.imageCredit
+        if (entry.image && w.imageAsClue) entry.imageAsClue = true
       }
       if (p) {
         const { wordId: _omit, ...rest } = p
@@ -248,6 +251,7 @@ export function parseJsonImport(text: string): ImportParseResult {
       row.alternates = Array.isArray(o.alternates) ? o.alternates.filter((a): a is string => typeof a === 'string' && a.trim() !== '').map((a) => a.trim()) : []
       row.image = typeof o.image === 'string' && o.image.startsWith('data:image/') ? o.image : null
       row.imageCredit = row.image && typeof o.imageCredit === 'string' ? o.imageCredit.slice(0, 500) : null
+      row.imageAsClue = !!row.image && o.imageAsClue === true
     }
     const p = parseProgressEntry(o.progress)
     if (p) row.progress = p

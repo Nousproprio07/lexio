@@ -144,6 +144,8 @@ export interface Question {
   imageId?: string | null
   /** Attribution de l'image, montrée après la réponse (elle peut nommer l'artiste). */
   imageCredit?: string | null
+  /** L'image est l'indice (affichée avec la question) ; sinon elle n'apparaît qu'avec la réponse. */
+  imageAsClue?: boolean
   /** Saisie : orthographes acceptées (mode A : mots partageant cette définition ; culture : réponse et variantes). */
   accepted: string[]
   /** Choix : quatre propositions mélangées (définitions, ou réponses en culture générale). */
@@ -299,6 +301,7 @@ function buildCultureQuestion(
     categoryName: categoryName(w.categoryId),
     imageId: w.imageId ?? null,
     imageCredit: w.imageId ? (w.imageCredit ?? null) : null,
+    imageAsClue: !!w.imageId && !!w.imageAsClue,
     accepted: kind === 'answer' ? [w.term, ...(w.alternates ?? [])] : [],
     options,
     correctIndex,

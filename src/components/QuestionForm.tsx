@@ -1,6 +1,6 @@
 import { ArrowUpDown, Globe, ImagePlus, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { parseAlternates } from '../lib/entries'
+import { parseAlternates, questionRefersToImage } from '../lib/entries'
 import { compressImage } from '../lib/image'
 import { textKey } from '../lib/normalize'
 import { LIMITS } from '../lib/transfer'
@@ -31,9 +31,24 @@ interface FormState {
   image: Blob | null
   /** Attribution de l'image (Wikipédia / Commons) ; null pour une photo personnelle. */
   imageCredit: string | null
+  /** Image montrée avec la question (indice) plutôt qu'avec la réponse. */
+  imageAsClue: boolean
+  /** Case modifiée à la main : on ne la coche plus automatiquement. */
+  clueTouched: boolean
 }
 
-const emptyForm: FormState = { question: '', answer: '', alternates: '', category: '', example: '', imageId: null, image: null, imageCredit: null }
+const emptyForm: FormState = {
+  question: '',
+  answer: '',
+  alternates: '',
+  category: '',
+  example: '',
+  imageId: null,
+  image: null,
+  imageCredit: null,
+  imageAsClue: false,
+  clueTouched: false,
+}
 
 /**
  * Création, modification d'une question de culture générale, ou transformation
@@ -78,6 +93,8 @@ export function QuestionFormDialog({
         imageId: word.imageId ?? null,
         image: null,
         imageCredit: word.imageCredit ?? null,
+        imageAsClue: !!word.imageAsClue,
+        clueTouched: true,
       })
     else {
       // mot rangé dans « Mots » : la question est le plus souvent dans le champ qui se termine par « ? »
@@ -108,6 +125,7 @@ export function QuestionFormDialog({
     categoryName: form.category.trim() || null,
     imageId: form.imageId,
     imageCredit: form.imageCredit,
+    imageAsClue: form.imageAsClue,
     alternates: parseAlternates(form.alternates),
   }
   // une nouvelle image rend la question distincte : pas de doublon possible avant l'enregistrement
@@ -159,7 +177,7 @@ export function QuestionFormDialog({
       } else {
         notify('Question ajoutée')
         // prêt pour la suivante : on garde la question type et la catégorie, souvent les mêmes
-        setForm({ ...emptyForm, question: form.question, category: form.category })
+        setForm({ ...emptyForm, question: form.question, category: form.category, imageAsClue: form.imageAsClue, clueTouched: form.clueTouched })
         setWebSearch(null)
         setSubmitted(false)
         setSavedCount((n) => n + 1)
@@ -173,8 +191,14 @@ export function QuestionFormDialog({
 
   const openWebSearch = () => setWebSearch(defaultImageQuery(form.answer, form.question))
 
+  // « Qui est-ce ? », « ce tableau »… : la case se coche toute seule tant qu'on ne l'a pas touchée
+  const withQuestion = (f: FormState, question: string): FormState => ({
+    ...f,
+    question,
+    imageAsClue: f.clueTouched ? f.imageAsClue : questionRefersToImage(question),
+  })
   const set = (k: 'question' | 'answer' | 'alternates' | 'category' | 'example') => (e: { target: { value: string } }) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }))
+    setForm((f) => (k === 'question' ? withQuestion(f, e.target.value) : { ...f, [k]: e.target.value }))
   const show = (msg: string | null) => (submitted ? msg : null)
   const hasImage = !!form.image || !!form.imageId
 
@@ -304,6 +328,22 @@ export function QuestionFormDialog({
             </div>
           )}
           {webSearch === null && form.imageCredit && (hasImage || preparing) && <p className="mt-1.5 text-xs break-words text-muted">{form.imageCredit}</p>}
+          {webSearch === null && (hasImage || preparing) && (
+            <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-line px-3.5 py-3">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-5 shrink-0 accent-(--color-brand)"
+                checked={form.imageAsClue}
+                onChange={(e) => setForm((f) => ({ ...f, imageAsClue: e.target.checked, clueTouched: true }))}
+              />
+              <span>
+                <span className="block text-[15px] font-medium">Montrer l’image avec la question</span>
+                <span className="block text-sm text-muted">
+                  À cocher quand il faut reconnaître le personnage, l’œuvre ou le lieu sur l’image. Sinon, elle s’affiche avec la réponse.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
 
         <Field label="Question" error={show(errors.question)} htmlFor="qf-question">
@@ -322,7 +362,7 @@ export function QuestionFormDialog({
                 type="button"
                 className="chip min-h-8 px-2.5 text-[13px]"
                 aria-pressed={textKey(t) === textKey(form.question)}
-                onClick={() => setForm((f) => ({ ...f, question: t }))}
+                onClick={() => setForm((f) => withQuestion(f, t))}
               >
                 {t}
               </button>

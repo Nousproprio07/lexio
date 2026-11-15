@@ -252,6 +252,11 @@ async function run(label, contextOptions) {
   check((await dialog.getByLabel('Bonne réponse', { exact: true }).inputValue()) === 'Léonard de Vinci', 'transformation : la réponse est reprise')
   await dialog.locator('input[type=file]').setInputFiles('public/icon-512.png')
   await dialog.locator('img[alt="Image de la question"]').waitFor()
+  const clue = dialog.getByRole('checkbox', { name: /Montrer l’image avec la question/ })
+  check(!(await clue.isChecked()), 'image avec la réponse par défaut')
+  await dialog.getByLabel('Question', { exact: true }).fill('Qui est-ce ?')
+  check(await clue.isChecked(), '« Qui est-ce ? » : image montrée avec la question')
+  await dialog.getByLabel('Question', { exact: true }).fill('Qui a peint la Joconde ?')
   await dialog.getByLabel(/^Autres réponses/).fill('Vinci, De Vinci')
   await dialog.getByLabel(/^Catégorie/).fill('Peintres')
   await shot('15-question-formulaire')
@@ -302,7 +307,7 @@ async function run(label, contextOptions) {
   const [illustratedQ, illustratedA] = subject.split('\n').map((t) => t.replace(/^Réponse : /, '').trim()).filter(Boolean)
   await page.locator('main li article h3 button', { hasText: illustratedA }).click()
   check(await dialog.getByText(illustratedQ, { exact: true }).isVisible(), 'question inchangée')
-  check(await dialog.getByText(/^Image : .*(Wikimedia Commons|Wikipédia)/).isVisible(), 'attribution de l’image conservée')
+  check(await dialog.getByText(/Montrée avec la réponse\. Image : .*(Wikimedia Commons|Wikipédia)/).isVisible(), 'attribution de l’image conservée')
   await shot('16c-fiche-attribution')
   await dialog.getByRole('button', { name: 'Fermer' }).click()
   // hors connexion : les images enregistrées s'affichent toujours
@@ -329,13 +334,15 @@ async function run(label, contextOptions) {
     const question = [...answerOf.keys()].find((k) => prompt.includes(k))
     check(!!question, `question affichée (${question})`)
     check((await page.getByRole('radio').count()) === 4, 'quatre réponses proposées')
-    if (question === 'Qui a peint la Joconde ?') {
-      check(await page.locator('main .card img').first().waitFor().then(() => true, () => false), 'image affichée avec la question')
-      await shot('18-question-image')
-    }
+    const illustrated = question === 'Qui a peint la Joconde ?'
+    if (illustrated) check((await page.locator('main img').count()) === 0, 'image cachée tant qu’on n’a pas répondu')
     await page.getByRole('radio', { name: answerOf.get(question) }).click()
     await page.keyboard.press('Enter')
     check(await page.getByText('Bonne réponse !').isVisible(), 'bonne réponse reconnue')
+    if (illustrated) {
+      check(await page.locator('main [role="status"] img').first().waitFor().then(() => true, () => false), 'image affichée avec la réponse')
+      await shot('18-reponse-image')
+    }
     await page.keyboard.press('Enter')
   }
   await page.getByText(/bonnes? réponses?/).waitFor()

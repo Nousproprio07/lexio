@@ -184,6 +184,7 @@ function ImportSection() {
           categoryName: r.category,
           alternates: r.alternates,
           imageCredit: r.imageCredit,
+          imageAsClue: r.imageAsClue,
           imageId: blob ? await saveImage(blob) : null,
         })
       }
