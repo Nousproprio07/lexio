@@ -10,13 +10,18 @@
  * l'application fonctionne en mémoire et le signale : `persistent === false`.
  */
 import type { Category, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
+import { entryKind } from '../lib/types'
+import { sameEntry } from '../lib/entries'
+import { imageIdOf } from '../lib/image'
 import { textKey } from '../lib/normalize'
 import { DuplicateError, uuid, type Repository, type Snapshot, type WordInput } from './repository'
-import { deriveSpaceKey, fromHex, importSpaceKey, open, seal, toHex, type Sealed, type SpaceKey } from './space'
+import { deriveSpaceKey, fromHex, importSpaceKey, open, openBytes, seal, sealBytes, toHex, type Sealed, type SpaceKey } from './space'
 
 const DB_NAME = 'lexio'
 const STORE = 'kv'
 const SPACE_PREFIX = 'space:'
+/** Images des questions : `img:<espace>:<empreinte>`, chiffrées une à une (hors du contenu principal, réécrit à chaque modification). */
+const IMAGE_PREFIX = 'img:'
 /** Dictionnaire d'avant les codes d'accès (non chiffré), rattaché au premier espace créé. */
 const UNCLAIMED_KEY = 'db'
 /** Ancien stockage du mode démonstration (localStorage), rattaché de la même façon. */
@@ -240,9 +245,31 @@ export class LocalRepository implements Repository {
   }
 
   private assertUnique(input: WordInput, ignoreId?: string, words = this.db.words) {
-    const key = textKey(input.term)
-    if (words.some((w) => w.id !== ignoreId && textKey(w.term) === key && w.categoryId === input.categoryId))
-      throw new DuplicateError()
+    if (words.some((w) => w.id !== ignoreId && sameEntry(w, input))) throw new DuplicateError(entryKind(input))
+  }
+
+  private imageKey(id: string) {
+    return `${IMAGE_PREFIX}${this.space.id}:${id}`
+  }
+
+  async putImage(blob: Blob): Promise<string> {
+    const bytes = await blob.arrayBuffer()
+    const id = await imageIdOf(blob)
+    const key = this.imageKey(id)
+    if (!(await this.store.get(key))) await this.store.put(key, { sealed: await sealBytes(this.space, bytes), type: blob.type })
+    return id
+  }
+
+  async getImage(id: string): Promise<Blob | null> {
+    const stored = await this.store.get<{ sealed: Sealed; type: string }>(this.imageKey(id))
+    if (!stored) return null
+    return new Blob([await openBytes(this.space, stored.sealed)], { type: stored.type })
+  }
+
+  /** Supprime les images que plus aucune question n'utilise. */
+  private async dropImages(ids: (string | null | undefined)[]) {
+    const used = new Set(this.db.words.map((w) => w.imageId).filter(Boolean))
+    for (const id of new Set(ids)) if (id && !used.has(id)) await this.store.del(this.imageKey(id)).catch(() => {})
   }
 
   async loadAll(): Promise<Snapshot> {
@@ -298,12 +325,20 @@ export class LocalRepository implements Repository {
     const prev = this.db.words.find((w) => w.id === id)
     if (!prev) throw new Error('Mot introuvable.')
     const w: Word = { ...prev, ...input, updatedAt: new Date().toISOString() }
+    if (input.kind !== 'question') {
+      // une question redevenue un mot perd ses champs propres
+      delete w.kind
+      delete w.imageId
+      delete w.alternates
+    }
     this.db = { ...this.db, words: this.db.words.map((x) => (x.id === id ? w : x)) }
     await this.save()
+    if (prev.imageId !== w.imageId) await this.dropImages([prev.imageId])
     return w
   }
 
   async deleteWord(id: string): Promise<void> {
+    const prev = this.db.words.find((w) => w.id === id)
     this.db = {
       ...this.db,
       words: this.db.words.filter((w) => w.id !== id),
@@ -311,6 +346,7 @@ export class LocalRepository implements Repository {
       answers: this.db.answers.map((a) => (a.wordId === id ? { ...a, wordId: null } : a)),
     }
     await this.save()
+    await this.dropImages([prev?.imageId])
   }
 
   async upsertProgress(items: WordProgress[]): Promise<void> {

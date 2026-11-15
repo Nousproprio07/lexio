@@ -59,3 +59,14 @@ export async function open<T>(space: SpaceKey, sealed: Sealed): Promise<T> {
   const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(sealed.iv) }, space.key, sealed.data)
   return JSON.parse(new TextDecoder().decode(plain)) as T
 }
+
+/** Chiffrement d'un contenu binaire (image). */
+export async function sealBytes(space: SpaceKey, bytes: ArrayBuffer): Promise<Sealed> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, space.key, bytes)
+  return { v: 1, iv, data }
+}
+
+export async function openBytes(space: SpaceKey, sealed: Sealed): Promise<ArrayBuffer> {
+  return crypto.subtle.decrypt({ name: 'AES-GCM', iv: new Uint8Array(sealed.iv) }, space.key, sealed.data)
+}

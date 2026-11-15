@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { LocalRepository } from '../data/local'
 import { DuplicateError, type WordInput } from '../data/repository'
+import { sameEntry } from '../lib/entries'
 import { textKey } from '../lib/normalize'
-import type { Category, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
+import { entryKind, type Category, type EntryKind, type QuizAnswer, type QuizSession, type Word, type WordProgress } from '../lib/types'
 import { useToast } from './toast'
 
 /** Écritures produites par une réponse de quiz. */
@@ -12,11 +13,14 @@ export type QuizWrite =
   | { kind: 'progress'; items: WordProgress[] }
 
 export interface WordDraft {
+  kind?: EntryKind
   term: string
   definition: string
   example: string | null
   /** Nom de catégorie saisi ; créée à la volée si elle n'existe pas. */
   categoryName: string | null
+  imageId?: string | null
+  alternates?: string[]
 }
 
 interface DataApi {
@@ -34,6 +38,7 @@ interface DataApi {
   error: string | null
   reload(): void
   categories: Category[]
+  /** Toutes les entrées : mots et questions de culture générale. */
   words: Word[]
   wordById: Map<string, Word>
   progress: Map<string, WordProgress>
@@ -42,15 +47,24 @@ interface DataApi {
   /** Mot déjà présent avec le même intitulé dans la même catégorie. */
   findDuplicate(draft: WordDraft, ignoreId?: string): Word | undefined
   saveWord(draft: WordDraft, id?: string): Promise<Word>
+  /** Enregistre une image (chiffrée) et renvoie son identifiant. */
+  saveImage(blob: Blob): Promise<string>
   deleteWord(id: string): Promise<void>
   renameCategory(id: string, name: string): Promise<void>
   deleteCategory(id: string): Promise<void>
-  importWords(drafts: WordDraft[], progress?: Map<string, Omit<WordProgress, 'wordId'>>, key?: (d: WordDraft) => string): Promise<number>
+  /** Import en masse ; `progressOf` restitue la progression sauvegardée de chaque entrée. */
+  importWords(drafts: WordDraft[], progressOf?: (d: WordDraft, i: number) => Omit<WordProgress, 'wordId'> | undefined): Promise<number>
   /** Écritures de quiz : appliquées à l'écran tout de suite, enregistrées en arrière-plan. */
   recordQuiz(ops: QuizWrite[]): void
 }
 
 const DataContext = createContext<DataApi | null>(null)
+
+function toInput(d: WordDraft, categoryId: string | null): WordInput {
+  const base = { term: d.term.trim(), definition: d.definition.trim(), example: d.example?.trim() || null, categoryId }
+  if (d.kind !== 'question') return base
+  return { ...base, kind: 'question', imageId: d.imageId ?? null, alternates: d.alternates ?? [] }
+}
 
 export function DataProvider({ repo, onLock, children }: { repo: LocalRepository; onLock(): void; children: ReactNode }) {
   const scope = repo.spaceId
@@ -121,9 +135,8 @@ export function DataProvider({ repo, onLock, children }: { repo: LocalRepository
     (draft: WordDraft, ignoreId?: string) => {
       const cat = findCategory(draft.categoryName)
       if (draft.categoryName && !cat) return undefined // nouvelle catégorie : pas de doublon possible
-      const key = textKey(draft.term)
-      const catId = cat?.id ?? null
-      return words.find((w) => w.id !== ignoreId && w.categoryId === catId && textKey(w.term) === key)
+      const entry = { ...draft, categoryId: cat?.id ?? null }
+      return words.find((w) => w.id !== ignoreId && sameEntry(w, entry))
     },
     [words, findCategory],
   )
@@ -144,19 +157,16 @@ export function DataProvider({ repo, onLock, children }: { repo: LocalRepository
 
   const saveWord = useCallback(
     async (draft: WordDraft, id?: string) => {
-      if (findDuplicate(draft, id)) throw new DuplicateError()
-      const input: WordInput = {
-        term: draft.term.trim(),
-        definition: draft.definition.trim(),
-        example: draft.example?.trim() || null,
-        categoryId: await ensureCategory(draft.categoryName),
-      }
+      if (findDuplicate(draft, id)) throw new DuplicateError(entryKind(draft))
+      const input = toInput(draft, await ensureCategory(draft.categoryName))
       const saved = id ? await repo.updateWord(id, input) : await repo.createWord(input)
       setWords((ws) => (id ? ws.map((w) => (w.id === id ? saved : w)) : [...ws, saved]))
       return saved
     },
     [repo, findDuplicate, ensureCategory],
   )
+
+  const saveImage = useCallback((blob: Blob) => repo.putImage(blob), [repo])
 
   const deleteWord = useCallback(
     async (id: string) => {
@@ -192,22 +202,15 @@ export function DataProvider({ repo, onLock, children }: { repo: LocalRepository
   )
 
   const importWords = useCallback(
-    async (drafts: WordDraft[], restored?: Map<string, Omit<WordProgress, 'wordId'>>, key?: (d: WordDraft) => string) => {
+    async (drafts: WordDraft[], progressOf?: (d: WordDraft, i: number) => Omit<WordProgress, 'wordId'> | undefined) => {
       const inputs: WordInput[] = []
-      for (const d of drafts) {
-        inputs.push({
-          term: d.term.trim(),
-          definition: d.definition.trim(),
-          example: d.example?.trim() || null,
-          categoryId: await ensureCategory(d.categoryName),
-        })
-      }
+      for (const d of drafts) inputs.push(toInput(d, await ensureCategory(d.categoryName)))
       const created = await repo.createWords(inputs)
       setWords((ws) => [...ws, ...created])
-      if (restored && key && restored.size > 0) {
+      if (progressOf) {
         const items: WordProgress[] = []
         created.forEach((w, i) => {
-          const p = restored.get(key(drafts[i]))
+          const p = progressOf(drafts[i], i)
           if (p) items.push({ ...p, wordId: w.id })
         })
         if (items.length > 0) {
@@ -281,6 +284,7 @@ export function DataProvider({ repo, onLock, children }: { repo: LocalRepository
     categoryName,
     findDuplicate,
     saveWord,
+    saveImage,
     deleteWord,
     renameCategory,
     deleteCategory,

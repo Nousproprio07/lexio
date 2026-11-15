@@ -1,6 +1,7 @@
 import { ArrowRight, Check, CircleCheck, CircleX, Eye, ThumbsUp, RotateCcw, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, useNavigate } from 'react-router'
+import { QuestionImage } from '../components/QuestionImage'
 import { ProgressBar } from '../components/ui'
 import { isCorrectAnswer } from '../lib/normalize'
 import { maskTerm, type Question, type QuestionResult } from '../lib/quiz'
@@ -43,9 +44,9 @@ export function QuizPlayPage() {
 
       {/* la clé force une transition douce à chaque question */}
       <div key={q.id} className="animate-fade-up">
-        {q.kind === 'word' && <WordQuestion q={q} result={result} onAnswer={answer} onNext={goNext} isLast={isLast} />}
-        {q.kind === 'definition' && <ChoiceQuestion q={q} result={result} onAnswer={answer} onNext={goNext} isLast={isLast} />}
-        {q.kind === 'recall' && (
+        {(q.kind === 'word' || q.kind === 'answer') && <WordQuestion q={q} result={result} onAnswer={answer} onNext={goNext} isLast={isLast} />}
+        {(q.kind === 'definition' || q.kind === 'choice') && <ChoiceQuestion q={q} result={result} onAnswer={answer} onNext={goNext} isLast={isLast} />}
+        {(q.kind === 'recall' || q.kind === 'flash') && (
           <RecallQuestion
             q={q}
             revealed={run.revealed}
@@ -84,7 +85,34 @@ function Prompt({ label, children, large }: { label: string; children: ReactNode
   )
 }
 
-/** Mode A : la définition est affichée, on saisit le mot. */
+const isCulture = (q: Question) => q.kind === 'answer' || q.kind === 'choice' || q.kind === 'flash'
+
+/** Culture générale : l'image et la question posée. */
+function CulturePrompt({ q }: { q: Question }) {
+  return (
+    <div className="card overflow-hidden text-center">
+      {q.imageId && <QuestionImage imageId={q.imageId} alt="Image de la question" className="h-[min(48dvh,26rem)] w-full bg-slate-50" />}
+      <div className="px-5 py-5 md:px-8 md:py-6">
+        {q.categoryName && <p className="text-xs font-semibold tracking-wider text-brand uppercase">{q.categoryName}</p>}
+        <p className="mx-auto mt-1.5 max-w-prose text-[19px] leading-snug font-semibold break-words text-balance whitespace-pre-line md:text-2xl">
+          {q.definition}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** Après la réponse à une question de culture générale. */
+function CultureExplain({ q }: { q: Question }) {
+  return (
+    <>
+      <p className="text-2xl font-bold tracking-tight break-words">{q.term}</p>
+      {q.example && <p className="mt-2 leading-relaxed whitespace-pre-line text-slate-700">{q.example}</p>}
+    </>
+  )
+}
+
+/** Mode A : la définition est affichée, on saisit le mot (ou la réponse, en culture générale). */
 function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
   const [value, setValue] = useState('')
   const [ignoreAccents] = useIgnoreAccents()
@@ -102,10 +130,14 @@ function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
 
   return (
     <div className="space-y-4">
-      <Prompt label="Quel est ce mot ?">
-        <p className="whitespace-pre-line">« {maskTerm(q.definition, q.term)} »</p>
-        {q.categoryName && <p className="mt-3 text-sm font-normal text-muted">{q.categoryName}</p>}
-      </Prompt>
+      {isCulture(q) ? (
+        <CulturePrompt q={q} />
+      ) : (
+        <Prompt label="Quel est ce mot ?">
+          <p className="whitespace-pre-line">« {maskTerm(q.definition, q.term)} »</p>
+          {q.categoryName && <p className="mt-3 text-sm font-normal text-muted">{q.categoryName}</p>}
+        </Prompt>
+      )}
 
       <form onSubmit={submit} className={result && !result.correct ? 'animate-shake' : ''}>
         <label htmlFor="answer" className="sr-only">
@@ -123,7 +155,7 @@ function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
           readOnly={!!result}
           autoComplete="off"
           autoCorrect="off"
-          autoCapitalize="off"
+          autoCapitalize={isCulture(q) ? 'words' : 'off'}
           spellCheck={false}
           enterKeyHint="done"
         />
@@ -144,7 +176,12 @@ function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
         )}
       </form>
 
-      {result && (
+      {result && isCulture(q) && (
+        <Feedback correct={result.correct} onNext={onNext} isLast={isLast}>
+          <CultureExplain q={q} />
+        </Feedback>
+      )}
+      {result && !isCulture(q) && (
         <Feedback correct={result.correct} onNext={onNext} isLast={isLast}>
           <p className="text-2xl font-bold tracking-tight">{q.term}</p>
           <p className="mt-2 leading-relaxed whitespace-pre-line text-slate-700">{q.definition}</p>
@@ -155,7 +192,7 @@ function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
   )
 }
 
-/** Mode B : le mot est affiché, on choisit parmi quatre définitions. */
+/** Mode B : le mot est affiché, on choisit parmi quatre définitions (ou quatre réponses, en culture générale). */
 function ChoiceQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
   const [selected, setSelected] = useState<number | null>(null)
 
@@ -185,11 +222,19 @@ function ChoiceQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) 
 
   return (
     <div className="space-y-4">
-      <Prompt label="Quelle est sa définition ?" large>
-        {q.term}
-      </Prompt>
+      {isCulture(q) ? (
+        <CulturePrompt q={q} />
+      ) : (
+        <Prompt label="Quelle est sa définition ?" large>
+          {q.term}
+        </Prompt>
+      )}
 
-      <div role="radiogroup" aria-label="Définitions proposées" className="space-y-2.5">
+      <div
+        role="radiogroup"
+        aria-label={isCulture(q) ? 'Réponses proposées' : 'Définitions proposées'}
+        className={isCulture(q) ? 'grid gap-2.5 sm:grid-cols-2' : 'space-y-2.5'}
+      >
         {q.options.map((o, i) => {
           const isCorrect = i === q.correctIndex
           const isChosen = i === selected
@@ -218,7 +263,7 @@ function ChoiceQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) 
               </span>
               <span className="min-w-0 flex-1 break-words">
                 {o.text}
-                {result && !isCorrect && (
+                {result && !isCorrect && !isCulture(q) && (
                   <span className="mt-1 block text-[13px] text-muted">Définition de « {o.term} »</span>
                 )}
               </span>
@@ -234,7 +279,12 @@ function ChoiceQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) 
         </button>
       )}
 
-      {result && (
+      {result && isCulture(q) && (
+        <Feedback correct={result.correct} onNext={onNext} isLast={isLast}>
+          <CultureExplain q={q} />
+        </Feedback>
+      )}
+      {result && !isCulture(q) && (
         <Feedback correct={result.correct} onNext={onNext} isLast={isLast}>
           <p className="text-xl font-bold tracking-tight">{q.term}</p>
           <p className="mt-1 leading-relaxed whitespace-pre-line text-slate-700">{q.definition}</p>
@@ -277,23 +327,33 @@ function RecallQuestion({
 
   return (
     <div className="space-y-4">
-      <Prompt label="Connaissez-vous sa définition ?" large>
-        {q.term}
-      </Prompt>
+      {isCulture(q) ? (
+        <CulturePrompt q={q} />
+      ) : (
+        <Prompt label="Connaissez-vous sa définition ?" large>
+          {q.term}
+        </Prompt>
+      )}
 
       {!revealed ? (
         <>
-          <p className="text-center text-[15px] text-muted">Formulez-la mentalement, puis vérifiez.</p>
+          <p className="text-center text-[15px] text-muted">{isCulture(q) ? 'Trouvez-la mentalement, puis vérifiez.' : 'Formulez-la mentalement, puis vérifiez.'}</p>
           <button ref={revealRef} type="button" className="btn-primary h-12 w-full text-base" onClick={onReveal}>
             <Eye className="size-5" aria-hidden />
-            Afficher la définition
+            {isCulture(q) ? 'Afficher la réponse' : 'Afficher la définition'}
           </button>
         </>
       ) : (
         <>
           <div className="card animate-fade-up p-5">
-            <p className="leading-relaxed whitespace-pre-line">{q.definition}</p>
-            {q.example && <p className="mt-3 border-l-2 border-brand/30 pl-3 text-[15px] leading-relaxed text-slate-600 italic">{q.example}</p>}
+            {isCulture(q) ? (
+              <CultureExplain q={q} />
+            ) : (
+              <>
+                <p className="leading-relaxed whitespace-pre-line">{q.definition}</p>
+                {q.example && <p className="mt-3 border-l-2 border-brand/30 pl-3 text-[15px] leading-relaxed text-slate-600 italic">{q.example}</p>}
+              </>
+            )}
           </div>
           <p className="text-center text-[15px] font-medium">Aviez-vous trouvé ?</p>
           <div className="grid grid-cols-2 gap-3">

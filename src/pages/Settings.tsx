@@ -2,8 +2,9 @@ import { Check, Download, FileJson, FileSpreadsheet, HardDrive, LockKeyhole, Pen
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { errorMessage } from '../components/WordDialogs'
 import { ConfirmDialog, Modal, PageHeader, plural, Spinner, Toggle } from '../components/ui'
-import { dedupeImport, parseCsvImport, parseJsonImport, toCsv, toJsonExport, wordKey, type ImportParseResult, type ImportRow } from '../lib/transfer'
-import type { Category } from '../lib/types'
+import { blobToDataUrl, dataUrlToBlob, imageIdOf } from '../lib/image'
+import { dedupeImport, entryKey, parseCsvImport, parseJsonImport, toCsv, toJsonExport, wordKey, type ImportParseResult, type ImportRow } from '../lib/transfer'
+import { isQuestion, type Category } from '../lib/types'
 import { useData } from '../state/data'
 import { useIgnoreAccents } from '../state/settings'
 import { useToast } from '../state/toast'
@@ -22,7 +23,8 @@ function download(name: string, content: string, type: string) {
 const stamp = () => new Date().toISOString().slice(0, 10)
 
 export function SettingsPage() {
-  const { words, categories, progress, categoryName, persistent, lastBackup, markBackup, lock } = useData()
+  const { repo, words, categories, progress, categoryName, persistent, lastBackup, markBackup, lock } = useData()
+  const [exporting, setExporting] = useState(false)
   const [ignoreAccents, setIgnoreAccents] = useIgnoreAccents()
   const notify = useToast()
   const [protectedStorage, setProtectedStorage] = useState<boolean | null>(null)
@@ -31,10 +33,23 @@ export function SettingsPage() {
     void navigator.storage?.persisted?.().then(setProtectedStorage, () => setProtectedStorage(null))
   }, [])
 
-  const exportJson = () => {
-    download(`lexio-sauvegarde-${stamp()}.json`, JSON.stringify(toJsonExport(words, categories, progress, new Date()), null, 2), 'application/json')
-    markBackup()
-    notify('Sauvegarde téléchargée')
+  const exportJson = async () => {
+    setExporting(true)
+    try {
+      // les images des questions sont incluses dans la sauvegarde
+      const images = new Map<string, string>()
+      for (const id of new Set(words.map((w) => w.imageId).filter((id): id is string => !!id))) {
+        const blob = await repo.getImage(id)
+        if (blob) images.set(id, await blobToDataUrl(blob))
+      }
+      download(`lexio-sauvegarde-${stamp()}.json`, JSON.stringify(toJsonExport(words, categories, progress, new Date(), images), null, 2), 'application/json')
+      markBackup()
+      notify('Sauvegarde téléchargée')
+    } catch (e) {
+      notify(errorMessage(e), 'error')
+    } finally {
+      setExporting(false)
+    }
   }
   const exportCsv = () => {
     download(`lexio-dictionnaire-${stamp()}.csv`, toCsv(words, categoryName), 'text/csv;charset=utf-8')
@@ -87,16 +102,18 @@ export function SettingsPage() {
         }
       >
         <div className="grid gap-2 sm:grid-cols-2">
-          <button type="button" className="btn-secondary justify-start" onClick={exportJson} disabled={words.length === 0}>
-            <FileJson className="size-5 text-brand" aria-hidden />
+          <button type="button" className="btn-secondary justify-start" onClick={() => void exportJson()} disabled={words.length === 0 || exporting}>
+            {exporting ? <Spinner className="size-5 text-brand" /> : <FileJson className="size-5 text-brand" aria-hidden />}
             Sauvegarde complète (JSON)
           </button>
-          <button type="button" className="btn-secondary justify-start" onClick={exportCsv} disabled={words.length === 0}>
+          <button type="button" className="btn-secondary justify-start" onClick={exportCsv} disabled={!words.some((w) => !isQuestion(w))}>
             <FileSpreadsheet className="size-5 text-brand" aria-hidden />
             Dictionnaire (CSV / Excel)
           </button>
         </div>
-        <p className="mt-2 text-sm text-muted">Le JSON inclut votre progression et peut être réimporté tel quel.</p>
+        <p className="mt-2 text-sm text-muted">
+          Le JSON inclut votre progression et la culture générale avec ses images ; il se réimporte tel quel. Le CSV ne contient que les mots.
+        </p>
       </Section>
 
       <ImportSection />
@@ -129,20 +146,25 @@ function Section({ title, description, children }: { title: string; description?
 // ---------------------------------------------------------------------------
 
 function ImportSection() {
-  const { words, categoryName, importWords } = useData()
+  const { words, categoryName, importWords, saveImage } = useData()
   const notify = useToast()
   const input = useRef<HTMLInputElement>(null)
   const [parsed, setParsed] = useState<(ImportParseResult & { fileName: string; fresh: ImportRow[]; duplicates: number }) | null>(null)
   const [busy, setBusy] = useState(false)
 
   const onFile = async (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      notify('Fichier trop volumineux (10 Mo maximum).', 'error')
+    // une sauvegarde JSON peut contenir les images de la culture générale
+    if (file.size > 300 * 1024 * 1024) {
+      notify('Fichier trop volumineux (300 Mo maximum).', 'error')
       return
     }
     const text = await file.text()
     const res = /\.json$/i.test(file.name) || text.trimStart().startsWith('{') || text.trimStart().startsWith('[') ? parseJsonImport(text) : parseCsvImport(text)
-    const existing = new Set(words.map((w) => wordKey(w.term, categoryName(w.categoryId))))
+    for (const r of res.rows) {
+      const blob = r.image ? dataUrlToBlob(r.image) : null
+      r.imageId = blob ? await imageIdOf(blob) : null
+    }
+    const existing = new Set(words.map((w) => entryKey({ ...w, category: categoryName(w.categoryId) })))
     const { fresh, duplicates } = dedupeImport(res.rows, existing)
     setParsed({ ...res, fileName: file.name, fresh, duplicates })
   }
@@ -151,12 +173,21 @@ function ImportSection() {
     if (!parsed) return
     setBusy(true)
     try {
-      const n = await importWords(
-        parsed.fresh.map((r) => ({ term: r.term, definition: r.definition, example: r.example, categoryName: r.category })),
-        parsed.progress,
-        (d) => wordKey(d.term, d.categoryName),
-      )
-      notify(plural(n, 'mot importé', 'mots importés'))
+      const drafts = []
+      for (const r of parsed.fresh) {
+        const blob = r.image ? dataUrlToBlob(r.image) : null
+        drafts.push({
+          kind: r.kind,
+          term: r.term,
+          definition: r.definition,
+          example: r.example,
+          categoryName: r.category,
+          alternates: r.alternates,
+          imageId: blob ? await saveImage(blob) : null,
+        })
+      }
+      const n = await importWords(drafts, (d, i) => parsed.fresh[i].progress ?? parsed.progress?.get(wordKey(d.term, d.categoryName)))
+      notify(plural(n, 'entrée importée', 'entrées importées'))
       setParsed(null)
     } catch (e) {
       notify(errorMessage(e), 'error')
@@ -195,7 +226,7 @@ function ImportSection() {
             </button>
             <button type="button" className="btn-primary" onClick={confirm} disabled={busy || !parsed?.fresh.length}>
               {busy ? <Spinner /> : <Download className="size-4.5" aria-hidden />}
-              Importer {parsed?.fresh.length ? plural(parsed.fresh.length, 'mot') : ''}
+              Importer {parsed?.fresh.length ? plural(parsed.fresh.length, 'entrée') : ''}
             </button>
           </div>
         }
@@ -206,7 +237,7 @@ function ImportSection() {
             <ul className="space-y-1.5">
               <li className="flex items-center gap-2">
                 <Check className="size-4.5 text-success" aria-hidden />
-                {plural(parsed.fresh.length, 'nouveau mot prêt', 'nouveaux mots prêts')} à être importé{parsed.fresh.length > 1 ? 's' : ''}
+                {importSummary(parsed.fresh)}
               </li>
               {parsed.duplicates > 0 && (
                 <li className="flex items-center gap-2 text-muted">
@@ -214,7 +245,7 @@ function ImportSection() {
                   {plural(parsed.duplicates, 'doublon ignoré', 'doublons ignorés')} (déjà présents dans la même catégorie)
                 </li>
               )}
-              {parsed.progress && parsed.progress.size > 0 && (
+              {((parsed.progress && parsed.progress.size > 0) || parsed.fresh.some((r) => r.progress)) && (
                 <li className="flex items-center gap-2 text-muted">
                   <Check className="size-4.5" aria-hidden />
                   Progression restaurée pour les mots importés
@@ -240,7 +271,7 @@ function ImportSection() {
                 <ul className="divide-y divide-line">
                   {parsed.fresh.slice(0, 5).map((r, k) => (
                     <li key={k} className="px-3.5 py-2.5">
-                      <span className="font-medium">{r.term}</span>
+                      <span className="font-medium">{r.kind === 'question' ? `Question · ${r.term}` : r.term}</span>
                       {r.category && <span className="text-muted"> · {r.category}</span>}
                       <span className="block truncate text-sm text-muted">{r.definition}</span>
                     </li>
@@ -253,6 +284,15 @@ function ImportSection() {
       </Modal>
     </Section>
   )
+}
+
+function importSummary(rows: ImportRow[]) {
+  const questions = rows.filter((r) => r.kind === 'question').length
+  const words = rows.length - questions
+  const parts = []
+  if (words > 0 || questions === 0) parts.push(plural(words, 'nouveau mot', 'nouveaux mots'))
+  if (questions > 0) parts.push(plural(questions, 'question de culture générale', 'questions de culture générale'))
+  return `${parts.join(' et ')} prêt${rows.length > 1 ? 's' : ''} à être importé${rows.length > 1 ? 's' : ''}`
 }
 
 // ---------------------------------------------------------------------------

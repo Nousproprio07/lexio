@@ -1,31 +1,54 @@
-import { ArrowRight, BookPlus, Info, Play, RotateCcw, Shuffle, SquarePen, ListChecks } from 'lucide-react'
+import { ArrowRight, BookOpen, BookPlus, Info, Landmark, Play, RotateCcw, Shuffle, SquarePen, ListChecks } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useSearchParams } from 'react-router'
 import { useWordDialogs } from '../components/WordDialogs'
 import { EmptyState, PageHeader, plural, ProgressBar, Toggle } from '../components/ui'
 import { dueWords, filterPool, NEW_WORDS_PER_SMART_SESSION, OPTIONS_COUNT, type SessionSize } from '../lib/quiz'
 import { textKey } from '../lib/normalize'
-import type { QuizMode } from '../lib/types'
+import { entryKind, isQuestion, type EntryKind, type QuizMode } from '../lib/types'
 import { useData } from '../state/data'
 import { useQuiz, type RunConfig } from '../state/quiz'
 import { useIgnoreAccents } from '../state/settings'
 
 const configKey = (scope: string) => `lexio:quiz-config:${scope}`
-const DEFAULT_CONFIG: RunConfig = { mode: 'mixed', size: 10, filters: { categoryId: null, onlyUnmastered: false, smart: false } }
+const DEFAULTS: Record<EntryKind, RunConfig> = {
+  word: { mode: 'mixed', size: 10, filters: { section: 'word', categoryId: null, onlyUnmastered: false, smart: false } },
+  question: { mode: 'definition', size: 10, filters: { section: 'question', categoryId: null, onlyUnmastered: false, smart: false } },
+}
 
-function loadConfig(scope: string): RunConfig {
+/** Réglages mémorisés séparément pour les mots et la culture générale. */
+function loadConfigs(scope: string): Record<EntryKind, RunConfig> {
   try {
-    const c = JSON.parse(localStorage.getItem(configKey(scope)) ?? 'null') as RunConfig | null
-    return c ? { ...DEFAULT_CONFIG, ...c, filters: { ...DEFAULT_CONFIG.filters, ...c.filters } } : DEFAULT_CONFIG
+    const raw = JSON.parse(localStorage.getItem(configKey(scope)) ?? 'null') as RunConfig | Partial<Record<EntryKind, RunConfig>> | null
+    // ancien format : un seul réglage, pour les mots
+    const saved: Partial<Record<EntryKind, RunConfig>> = raw && 'mode' in raw ? { word: raw as RunConfig } : ((raw ?? {}) as Partial<Record<EntryKind, RunConfig>>)
+    const merge = (k: EntryKind): RunConfig => {
+      const c = saved[k]
+      return c ? { ...DEFAULTS[k], ...c, filters: { ...DEFAULTS[k].filters, ...c.filters, section: k } } : DEFAULTS[k]
+    }
+    return { word: merge('word'), question: merge('question') }
   } catch {
-    return DEFAULT_CONFIG
+    return DEFAULTS
   }
 }
 
-const MODES: { value: QuizMode; title: string; desc: string; icon: typeof Play }[] = [
-  { value: 'word', title: 'Retrouver le mot', desc: 'Une définition, vous écrivez le mot.', icon: SquarePen },
-  { value: 'definition', title: 'Retrouver la définition', desc: 'Un mot, quatre définitions au choix.', icon: ListChecks },
-  { value: 'mixed', title: 'Mixte', desc: 'Les deux exercices en alternance.', icon: Shuffle },
+type ModeInfo = { value: QuizMode; title: string; desc: string; icon: typeof Play }
+const MODES: Record<EntryKind, ModeInfo[]> = {
+  word: [
+    { value: 'word', title: 'Retrouver le mot', desc: 'Une définition, vous écrivez le mot.', icon: SquarePen },
+    { value: 'definition', title: 'Retrouver la définition', desc: 'Un mot, quatre définitions au choix.', icon: ListChecks },
+    { value: 'mixed', title: 'Mixte', desc: 'Les deux exercices en alternance.', icon: Shuffle },
+  ],
+  question: [
+    { value: 'definition', title: 'Choisir la réponse', desc: 'Une image et sa question, quatre réponses au choix.', icon: ListChecks },
+    { value: 'word', title: 'Écrire la réponse', desc: 'Plus difficile : vous tapez la réponse.', icon: SquarePen },
+    { value: 'mixed', title: 'Mixte', desc: 'Les deux exercices en alternance.', icon: Shuffle },
+  ],
+}
+
+const SECTIONS: { value: EntryKind; label: string; icon: typeof Play }[] = [
+  { value: 'word', label: 'Mots', icon: BookOpen },
+  { value: 'question', label: 'Culture générale', icon: Landmark },
 ]
 
 const SIZES: { value: SessionSize; label: string }[] = [
@@ -36,13 +59,25 @@ const SIZES: { value: SessionSize; label: string }[] = [
 ]
 
 export function QuizSetupPage() {
-  const { words, categories, progress, scope } = useData()
+  const { words: entries, categories: allCategories, progress, scope } = useData()
   const { run, start, abandon } = useQuiz()
-  const { openNew } = useWordDialogs()
+  const { openNew, openNewQuestion } = useWordDialogs()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
   const [ignoreAccents, setIgnoreAccents] = useIgnoreAccents()
-  const [config, setConfig] = useState<RunConfig>(() => loadConfig(scope))
+  const [configs, setConfigs] = useState(() => loadConfigs(scope))
   const [error, setError] = useState<string | null>(null)
+  const section: EntryKind = params.get('section') === 'culture' ? 'question' : 'word'
+  const config = configs[section]
+  const setSection = (k: EntryKind) => {
+    setError(null)
+    setParams(k === 'question' ? { section: 'culture' } : {}, { replace: true })
+  }
+  const words = useMemo(() => entries.filter((w) => entryKind(w) === section), [entries, section])
+  const categories = useMemo(() => {
+    const used = new Set(words.map((w) => w.categoryId))
+    return allCategories.filter((c) => used.has(c.id))
+  }, [words, allCategories])
 
   // catégorie mémorisée mais supprimée depuis
   const categoryId =
@@ -60,21 +95,22 @@ export function QuizSetupPage() {
   }, [words, progress, effective.filters])
 
   const count = effective.size === 'all' ? available : Math.min(effective.size, available)
-  const distinctDefinitions = useMemo(() => new Set(words.map((w) => textKey(w.definition))).size, [words])
+  // choix possibles : définitions distinctes (mots) ou réponses distinctes (culture générale)
+  const distinctChoices = useMemo(() => new Set(words.map((w) => textKey(isQuestion(w) ? w.term : w.definition))).size, [words])
 
   const update = (patch: Partial<RunConfig> | ((c: RunConfig) => RunConfig)) =>
-    setConfig((c) => (typeof patch === 'function' ? patch(c) : { ...c, ...patch }))
+    setConfigs((all) => ({ ...all, [section]: typeof patch === 'function' ? patch(all[section]) : { ...all[section], ...patch } }))
   const setFilter = <K extends keyof RunConfig['filters']>(k: K, v: RunConfig['filters'][K]) =>
     update((c) => ({ ...c, filters: { ...c.filters, [k]: v } }))
 
   const launch = () => {
     try {
-      localStorage.setItem(configKey(scope), JSON.stringify(effective))
+      localStorage.setItem(configKey(scope), JSON.stringify({ ...configs, [section]: effective }))
     } catch {
       /* ignoré */
     }
     if (!start(effective)) {
-      setError('Aucun mot ne correspond à ces critères.')
+      setError(section === 'question' ? 'Aucune question ne correspond à ces critères.' : 'Aucun mot ne correspond à ces critères.')
       return
     }
     navigate('/quiz/session')
@@ -110,10 +146,51 @@ export function QuizSetupPage() {
     )
   }
 
+  const sectionPicker = (
+    <div role="tablist" aria-label="Section" className="mb-6 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1">
+      {SECTIONS.map(({ value, label, icon: Icon }) => (
+        <button
+          key={value}
+          type="button"
+          role="tab"
+          aria-selected={section === value}
+          onClick={() => setSection(value)}
+          className={`flex h-11 items-center justify-center gap-2 rounded-xl text-[15px] font-semibold transition-colors ${
+            section === value ? 'bg-white text-brand-dark shadow-sm' : 'text-muted hover:text-ink'
+          }`}
+        >
+          <Icon className="size-4.5" aria-hidden />
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+
+  if (words.length === 0 && section === 'question') {
+    return (
+      <div className="mx-auto max-w-2xl animate-fade-up">
+        <PageHeader title="Quiz" />
+        {sectionPicker}
+        <EmptyState
+          icon={<Landmark className="size-7" />}
+          title="Ajoutez d'abord quelques questions"
+          action={
+            <button type="button" className="btn-primary" onClick={openNewQuestion}>
+              Ajouter une question
+            </button>
+          }
+        >
+          Une photo, une question, la bonne réponse : Lexio en fait un quiz.
+        </EmptyState>
+      </div>
+    )
+  }
+
   if (words.length === 0) {
     return (
-      <div className="animate-fade-up">
+      <div className="mx-auto max-w-2xl animate-fade-up">
         <PageHeader title="Quiz" />
+        {sectionPicker}
         <EmptyState
           icon={<BookPlus className="size-7" />}
           title="Ajoutez d'abord quelques mots"
@@ -132,12 +209,13 @@ export function QuizSetupPage() {
   return (
     <div className="mx-auto max-w-2xl animate-fade-up">
       <PageHeader title="Nouveau quiz" subtitle="Choisissez votre exercice, Lexio s'occupe du reste." />
+      {sectionPicker}
 
       <div className="space-y-6">
         <fieldset>
           <legend className="label mb-2.5">Exercice</legend>
           <div className="grid gap-2.5 sm:grid-cols-3">
-            {MODES.map(({ value, title, desc, icon: Icon }) => (
+            {MODES[section].map(({ value, title, desc, icon: Icon }) => (
               <label
                 key={value}
                 className="card flex cursor-pointer items-start gap-3 p-4 transition-colors has-checked:border-brand has-checked:bg-brand-soft/60 has-focus-visible:ring-2 has-focus-visible:ring-brand sm:flex-col sm:gap-2"
@@ -158,11 +236,12 @@ export function QuizSetupPage() {
               </label>
             ))}
           </div>
-          {config.mode !== 'word' && distinctDefinitions < OPTIONS_COUNT && (
+          {config.mode !== 'word' && distinctChoices < OPTIONS_COUNT && (
             <p className="mt-2.5 flex gap-2 text-sm text-muted">
               <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-              Il faut au moins 4 définitions différentes pour proposer des choix. En attendant, Lexio vous montrera la définition et vous direz si vous la
-              connaissiez.
+              {section === 'question'
+                ? 'Il faut au moins 4 réponses différentes pour proposer des choix. En attendant, Lexio vous montrera la réponse et vous direz si vous la connaissiez.'
+                : 'Il faut au moins 4 définitions différentes pour proposer des choix. En attendant, Lexio vous montrera la définition et vous direz si vous la connaissiez.'}
             </p>
           )}
         </fieldset>
@@ -205,14 +284,14 @@ export function QuizSetupPage() {
           <div className="py-3.5">
             <Toggle
               label="Révision intelligente"
-              description="Uniquement les mots à revoir aujourd'hui, les plus fragiles en premier."
+              description={`Uniquement ${section === 'question' ? 'les questions' : 'les mots'} à revoir aujourd'hui, les plus fragiles en premier.`}
               checked={config.filters.smart}
               onChange={(v) => setFilter('smart', v)}
             />
           </div>
           <div className="py-3.5">
             <Toggle
-              label="Uniquement les mots non maîtrisés"
+              label={section === 'question' ? 'Uniquement les questions non maîtrisées' : 'Uniquement les mots non maîtrisés'}
               checked={config.filters.onlyUnmastered}
               onChange={(v) => setFilter('onlyUnmastered', v)}
             />
@@ -237,7 +316,7 @@ export function QuizSetupPage() {
             </button>
           ) : (
             <p className="card p-4 text-center text-[15px] text-muted">
-              {config.filters.smart ? "Rien à réviser aujourd'hui avec ces critères. Désactivez la révision intelligente pour vous entraîner quand même." : 'Aucun mot ne correspond à ces critères.'}
+              {config.filters.smart ? "Rien à réviser aujourd'hui avec ces critères. Désactivez la révision intelligente pour vous entraîner quand même." : section === 'question' ? 'Aucune question ne correspond à ces critères.' : 'Aucun mot ne correspond à ces critères.'}
             </p>
           )}
           {error && (

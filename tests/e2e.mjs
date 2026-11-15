@@ -234,6 +234,101 @@ async function run(label, contextOptions) {
   await page.getByText('Mots enregistrés').waitFor()
   check((await page.locator('dl').first().innerText()).includes('4'), 'le premier code rouvre ses 4 mots')
 
+  // --- culture générale ----------------------------------------------------------
+  // une question saisie par erreur dans « Mots »
+  await page.goto(`${BASE}/dictionnaire`)
+  await page.getByRole('button', { name: 'Ajouter un mot' }).first().click()
+  await dialog.getByLabel('Mot').fill('Qui a peint la Joconde ?')
+  await dialog.getByLabel('Définition').fill('Léonard de Vinci')
+  await dialog.getByRole('button', { name: 'Enregistrer le mot' }).click()
+  await page.getByText('ajouté à votre dictionnaire').waitFor()
+  await dialog.getByRole('button', { name: 'Terminer' }).click()
+  await page.getByText(/ressemble à des questions de culture générale/).click()
+  await page.getByRole('heading', { name: 'Culture générale' }).waitFor()
+  await shot('14-culture-a-ranger')
+  await page.locator('section[aria-labelledby="misplaced-title"]').getByRole('button', { name: 'Transformer' }).click()
+  check((await dialog.getByLabel('Question', { exact: true }).inputValue()) === 'Qui a peint la Joconde ?', 'transformation : la question est reprise')
+  check((await dialog.getByLabel('Bonne réponse', { exact: true }).inputValue()) === 'Léonard de Vinci', 'transformation : la réponse est reprise')
+  await dialog.locator('input[type=file]').setInputFiles('public/icon-512.png')
+  await dialog.locator('img[alt="Image de la question"]').waitFor()
+  await dialog.getByLabel(/^Autres réponses/).fill('Vinci, De Vinci')
+  await dialog.getByLabel(/^Catégorie/).fill('Peintres')
+  await shot('15-question-formulaire')
+  await dialog.getByRole('button', { name: 'Transformer', exact: true }).click()
+  await page.getByText('Transformé en question de culture générale').waitFor()
+  check(!(await page.locator('section[aria-labelledby="misplaced-title"]').isVisible()), 'plus rien à ranger')
+
+  const QUESTIONS = [
+    ['Qui a peint Guernica ?', 'Pablo Picasso'],
+    ['Qui a peint Les Tournesols ?', 'Vincent van Gogh'],
+    ['Qui a peint Impression, soleil levant ?', 'Claude Monet'],
+  ]
+  const answerOf = new Map([['Qui a peint la Joconde ?', 'Léonard de Vinci'], ...QUESTIONS])
+  await page.getByRole('button', { name: 'Ajouter une question' }).first().click()
+  await dialog.getByRole('button', { name: 'Enregistrer la question' }).click()
+  check(await dialog.getByText('Indiquez la bonne réponse.').isVisible(), 'validation : réponse requise')
+  for (const [question, answer] of QUESTIONS) {
+    await dialog.getByLabel('Question', { exact: true }).fill(question)
+    await dialog.getByLabel('Bonne réponse', { exact: true }).fill(answer)
+    await dialog.getByLabel(/^Catégorie/).fill('Peintres')
+    await dialog.getByRole('button', { name: 'Enregistrer la question' }).click()
+    await page.getByText('Question ajoutée').last().waitFor()
+    await page.waitForTimeout(150)
+  }
+  await dialog.getByRole('button', { name: 'Terminer' }).click()
+  await page.waitForTimeout(300)
+  check((await page.locator('main li article').count()) === 4, '4 questions en culture générale')
+  const imgOk = await page.locator('main li article img').first().evaluate((img) => img.complete && img.naturalWidth > 0).catch(() => false)
+  check(imgOk, 'image déchiffrée et affichée')
+  await shot('16-culture')
+
+  await page.goto(`${BASE}/dictionnaire`)
+  await page.getByRole('heading', { name: 'Mon dictionnaire' }).waitFor()
+  check((await page.locator('main li article').count()) === 4, 'les questions ne sont plus dans Mots')
+
+  await page.goto(`${BASE}/quiz?section=culture`)
+  check(await page.getByRole('tab', { name: 'Culture générale', selected: true }).isVisible(), 'quiz : section culture générale')
+  await page.locator('label', { hasText: /^Tous$/ }).click()
+  await shot('17-quiz-culture-reglages')
+  await page.getByRole('button', { name: /Commencer · 4 questions/ }).click()
+  for (let i = 0; i < 4; i++) {
+    await page.getByText(`Question ${i + 1} sur 4`).waitFor()
+    const prompt = await page.locator('main .card').first().innerText()
+    const question = [...answerOf.keys()].find((k) => prompt.includes(k))
+    check(!!question, `question affichée (${question})`)
+    check((await page.getByRole('radio').count()) === 4, 'quatre réponses proposées')
+    if (question === 'Qui a peint la Joconde ?') {
+      check(await page.locator('main .card img').first().waitFor().then(() => true, () => false), 'image affichée avec la question')
+      await shot('18-question-image')
+    }
+    await page.getByRole('radio', { name: answerOf.get(question) }).click()
+    await page.keyboard.press('Enter')
+    check(await page.getByText('Bonne réponse !').isVisible(), 'bonne réponse reconnue')
+    await page.keyboard.press('Enter')
+  }
+  await page.getByText(/bonnes? réponses?/).waitFor()
+  check(/4 \/ 4/.test(await page.locator('section[aria-labelledby="score-title"]').innerText()), 'score culture 4/4')
+  await page.getByRole('button', { name: "Retour à l'accueil" }).click()
+  await page.getByRole('heading', { name: 'Culture générale' }).waitFor()
+  await shot('19-accueil-culture')
+
+  await page.goto(`${BASE}/reglages`)
+  const dl2 = page.waitForEvent('download')
+  await page.getByRole('button', { name: /Sauvegarde complète/ }).click()
+  const backup = await (await dl2).path().then((p) => import('node:fs').then((fs) => fs.readFileSync(p, 'utf8')))
+  check(backup.includes('"kind": "question"') && backup.includes('data:image/'), 'sauvegarde avec les questions et leurs images')
+  const keys = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const req = indexedDB.open('lexio')
+        req.onsuccess = () => {
+          const all = req.result.transaction('kv').objectStore('kv').getAllKeys()
+          all.onsuccess = () => resolve(all.result)
+        }
+      }),
+  )
+  check(keys.some((k) => String(k).startsWith('img:')), 'image rangée à part, chiffrée')
+
   // débordement horizontal
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   check(overflow <= 0, `aucun défilement horizontal (${overflow}px)`)

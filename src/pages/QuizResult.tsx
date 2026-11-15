@@ -1,4 +1,5 @@
 import { CircleCheck, CircleX, House, RotateCcw, Target } from 'lucide-react'
+import { useRef } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import { useWordDialogs } from '../components/WordDialogs'
 import { plural } from '../components/ui'
@@ -11,8 +12,10 @@ export function QuizResultPage() {
   const { wordById } = useData()
   const { openDetail } = useWordDialogs()
   const navigate = useNavigate()
+  // « Retour à l'accueil » ferme la session : ne pas rediriger vers /quiz pendant la navigation
+  const leaving = useRef(false)
 
-  if (!run) return <Navigate to="/quiz" replace />
+  if (!run) return leaving.current ? null : <Navigate to="/quiz" replace />
   if (!run.finishedAt) return <Navigate to="/quiz/session" replace />
 
   const score = computeScore(run.results)
@@ -59,6 +62,7 @@ export function QuizResultPage() {
           type="button"
           className={`btn-secondary h-12 ${reviewIds.length === 0 ? 'sm:col-span-2' : ''}`}
           onClick={() => {
+            leaving.current = true
             abandon()
             navigate('/')
           }}

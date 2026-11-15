@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-route
 import { Layout, Logo } from './components/Layout'
 import { WordDialogsProvider } from './components/WordDialogs'
 import { Spinner } from './components/ui'
+import { CulturePage } from './pages/Culture'
 import { DictionaryPage } from './pages/Dictionary'
 import { HomePage } from './pages/Home'
 import { ProgressPage } from './pages/Progress'
@@ -55,6 +56,7 @@ function DataGate() {
           <Route element={<Layout />}>
             <Route index element={<HomePage />} />
             <Route path="dictionnaire" element={<DictionaryPage />} />
+            <Route path="culture" element={<CulturePage />} />
             <Route path="quiz" element={<QuizSetupPage />} />
             <Route path="quiz/session" element={<QuizPlayPage />} />
             <Route path="quiz/resultat" element={<QuizResultPage />} />

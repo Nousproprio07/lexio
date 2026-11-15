@@ -1,10 +1,13 @@
-import type { Category, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
+import type { Category, EntryKind, QuizAnswer, QuizSession, Word, WordProgress } from '../lib/types'
 
 export interface WordInput {
+  kind?: EntryKind
   term: string
   definition: string
   example: string | null
   categoryId: string | null
+  imageId?: string | null
+  alternates?: string[]
 }
 
 export interface Snapshot {
@@ -16,8 +19,8 @@ export interface Snapshot {
 
 /** Levée quand un mot identique existe déjà dans la même catégorie. */
 export class DuplicateError extends Error {
-  constructor() {
-    super('Ce mot existe déjà dans cette catégorie.')
+  constructor(kind: EntryKind = 'word') {
+    super(kind === 'question' ? 'Cette question existe déjà dans cette catégorie.' : 'Ce mot existe déjà dans cette catégorie.')
   }
 }
 
@@ -36,6 +39,9 @@ export interface Repository {
   upsertSession(session: QuizSession): Promise<void>
   /** Idempotent : une réponse déjà enregistrée (même id) est ignorée. */
   insertAnswers(answers: QuizAnswer[]): Promise<void>
+  /** Images des questions, chiffrées à part. L'identifiant dépend du contenu. */
+  putImage(blob: Blob): Promise<string>
+  getImage(id: string): Promise<Blob | null>
 }
 
 export function uuid(): string {

@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
 import { computeStreak, dueWords } from '../lib/quiz'
+import { isQuestion } from '../lib/types'
 import { useData } from './data'
 
 export function useStats() {
-  const { words, progress, sessions } = useData()
+  const { words: entries, progress, sessions } = useData()
   return useMemo(() => {
     const now = new Date()
+    const words = entries.filter((w) => !isQuestion(w))
+    const questions = entries.filter(isQuestion)
     let mastered = 0
     for (const w of words) if (progress.get(w.id)?.status === 'mastered') mastered++
     const active = sessions.filter((s) => s.answeredCount > 0)
@@ -15,14 +18,17 @@ export function useStats() {
       .filter((s) => s.finishedAt && s.answeredCount > 0)
       .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
     return {
+      /** Mots uniquement ; la culture générale est comptée à part. */
       total: words.length,
       mastered,
       due: dueWords(words, progress, now).length,
+      questions: questions.length,
+      questionsDue: dueWords(questions, progress, now).length,
       streak: computeStreak(active.map((s) => s.startedAt), now),
       studiedToday: active.some((s) => new Date(s.startedAt).toDateString() === now.toDateString()),
       successRate: answered === 0 ? null : Math.round((correct / answered) * 100),
       finishedCount: finished.length,
       recent: finished.slice(-12),
     }
-  }, [words, progress, sessions])
+  }, [entries, progress, sessions])
 }

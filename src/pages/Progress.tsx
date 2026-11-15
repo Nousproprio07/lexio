@@ -34,7 +34,11 @@ export function ProgressPage() {
       <PageHeader title="Progression" />
 
       <dl className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Stat icon={<Library />} label="Mots enregistrés" value={stats.total.toLocaleString('fr-FR')} />
+        <Stat
+          icon={<Library />}
+          label={stats.questions > 0 ? `Mots · ${plural(stats.questions, 'question')}` : 'Mots enregistrés'}
+          value={stats.total.toLocaleString('fr-FR')}
+        />
         <Stat icon={<GraduationCap />} label="Mots maîtrisés" value={stats.mastered.toLocaleString('fr-FR')} />
         <Stat icon={<Target />} label="Taux de réussite" value={stats.successRate === null ? '—' : `${stats.successRate} %`} />
         <Stat icon={<Trophy />} label="Quiz terminés" value={stats.finishedCount.toLocaleString('fr-FR')} />

@@ -39,7 +39,14 @@ export interface QuizRun {
 export const SMART_REVIEW: RunConfig = {
   mode: 'mixed',
   size: 20,
-  filters: { categoryId: null, onlyUnmastered: false, smart: true },
+  filters: { section: 'word', categoryId: null, onlyUnmastered: false, smart: true },
+}
+
+/** Révision intelligente de la culture générale (choix de la réponse). */
+export const SMART_CULTURE: RunConfig = {
+  mode: 'definition',
+  size: 20,
+  filters: { section: 'question', categoryId: null, onlyUnmastered: false, smart: true },
 }
 
 interface QuizApi {
@@ -138,7 +145,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
               wordId: q.wordId,
               kind: q.kind,
               givenAnswer: result.given,
-              expected: q.kind === 'word' ? q.term : q.definition,
+              expected: q.kind === 'definition' || q.kind === 'recall' ? q.definition : q.term,
               isCorrect: result.correct,
               answeredAt: now.toISOString(),
             },

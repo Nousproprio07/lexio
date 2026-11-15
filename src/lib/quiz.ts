@@ -4,7 +4,7 @@
  */
 import { isDueToday } from './srs'
 import { textKey } from './normalize'
-import type { QuestionKind, QuizMode, Status, Word, WordProgress } from './types'
+import { entryKind, isQuestion, type EntryKind, type QuestionKind, type QuizMode, type Status, type Word, type WordProgress } from './types'
 
 export type Rng = () => number
 
@@ -36,6 +36,8 @@ export function shuffle<T>(items: readonly T[], rng: Rng): T[] {
 export type SessionSize = 5 | 10 | 20 | 'all'
 
 export interface SessionFilters {
+  /** Mots ou culture générale (absent = mots, configurations antérieures). */
+  section?: EntryKind
   /** `null` = toutes les catégories ; `''` = sans catégorie. */
   categoryId: string | null
   onlyUnmastered: boolean
@@ -51,7 +53,9 @@ const statusOf = (progress: ProgressMap, id: string): Status => progress.get(id)
 
 /** Mots correspondant aux filtres de catégorie / maîtrise (avant révision intelligente). */
 export function filterPool(words: readonly Word[], progress: ProgressMap, f: SessionFilters): Word[] {
+  const section = f.section ?? 'word'
   return words.filter((w) => {
+    if (entryKind(w) !== section) return false
     if (f.categoryId !== null && (w.categoryId ?? '') !== f.categoryId) return false
     if (f.onlyUnmastered && statusOf(progress, w.id) === 'mastered') return false
     return true
@@ -136,9 +140,11 @@ export interface Question {
   definition: string
   example: string | null
   categoryName: string | null
-  /** Mode A : orthographes acceptées (mots enregistrés partageant exactement cette définition). */
+  /** Culture générale : image affichée avec la question. */
+  imageId?: string | null
+  /** Saisie : orthographes acceptées (mode A : mots partageant cette définition ; culture : réponse et variantes). */
   accepted: string[]
-  /** Mode B : quatre propositions mélangées. */
+  /** Choix : quatre propositions mélangées (définitions, ou réponses en culture générale). */
   options: QuestionOption[]
   correctIndex: number
 }
@@ -174,6 +180,32 @@ export function pickDistractors(target: Word, all: readonly Word[], rng: Rng, co
     .map((c) => c.w)
 }
 
+/**
+ * Culture générale : mauvaises réponses plausibles, tirées des réponses des
+ * autres questions. Exclut la bonne réponse et ses variantes acceptées.
+ * Privilégie la même catégorie (des peintres pour un peintre) et une longueur proche.
+ */
+export function pickAnswerDistractors(target: Word, all: readonly Word[], rng: Rng, count = OPTIONS_COUNT - 1): Word[] {
+  const seen = new Set([target.term, ...(target.alternates ?? [])].map(textKey))
+  const candidates: { w: Word; score: number }[] = []
+  for (const w of all) {
+    if (w.id === target.id || !isQuestion(w)) continue
+    const key = textKey(w.term)
+    if (seen.has(key)) continue
+    seen.add(key)
+    const lenA = target.term.length
+    const lenB = w.term.length
+    const lengthSimilarity = 1 - Math.abs(lenA - lenB) / Math.max(lenA, lenB, 1)
+    const sameCategory = target.categoryId !== null && w.categoryId === target.categoryId ? 1.5 : 0
+    candidates.push({ w, score: sameCategory + lengthSimilarity * 0.5 + rng() * 0.8 })
+  }
+  if (candidates.length < count) return []
+  return candidates
+    .sort((a, b) => b.score - a.score)
+    .slice(0, count)
+    .map((c) => c.w)
+}
+
 /** Peut-on poser une question à choix multiples sur ce mot ? */
 export function canAskMultipleChoice(target: Word, all: readonly Word[]): boolean {
   return pickDistractors(target, all, () => 0).length === OPTIONS_COUNT - 1
@@ -197,13 +229,15 @@ export function buildQuestions(
   categoryName: (id: string | null) => string | null,
   rng: Rng,
 ): Question[] {
+  const words = all.filter((w) => !isQuestion(w))
   return selected.map((w, i) => {
+    if (isQuestion(w)) return buildCultureQuestion(w, all, mode, i, categoryName, rng)
     let kind: QuestionKind = mode === 'word' ? 'word' : mode === 'definition' ? 'definition' : i % 2 === 0 ? 'word' : 'definition'
     let options: QuestionOption[] = []
     let correctIndex = -1
 
     if (kind === 'definition') {
-      const distractors = pickDistractors(w, all, rng)
+      const distractors = pickDistractors(w, words, rng)
       if (distractors.length === 0) {
         kind = 'recall'
       } else {
@@ -215,7 +249,7 @@ export function buildQuestions(
     const defKey = textKey(w.definition)
     const accepted =
       kind === 'word'
-        ? [...new Set([w.term, ...all.filter((o) => textKey(o.definition) === defKey).map((o) => o.term)])]
+        ? [...new Set([w.term, ...words.filter((o) => textKey(o.definition) === defKey).map((o) => o.term)])]
         : []
 
     return {
@@ -231,6 +265,41 @@ export function buildQuestions(
       correctIndex,
     }
   })
+}
+
+function buildCultureQuestion(
+  w: Word,
+  all: readonly Word[],
+  mode: QuizMode,
+  i: number,
+  categoryName: (id: string | null) => string | null,
+  rng: Rng,
+): Question {
+  let kind: QuestionKind = mode === 'word' ? 'answer' : mode === 'definition' ? 'choice' : i % 2 === 0 ? 'choice' : 'answer'
+  let options: QuestionOption[] = []
+  let correctIndex = -1
+  if (kind === 'choice') {
+    const distractors = pickAnswerDistractors(w, all, rng)
+    if (distractors.length === 0) {
+      kind = 'flash'
+    } else {
+      options = shuffle([w, ...distractors], rng).map((d) => ({ text: d.term, term: d.term }))
+      correctIndex = options.findIndex((o) => o.text === w.term)
+    }
+  }
+  return {
+    id: `${Date.now().toString(36)}-${(questionSeq++).toString(36)}-${i}`,
+    wordId: w.id,
+    kind,
+    term: w.term,
+    definition: w.definition,
+    example: w.example,
+    categoryName: categoryName(w.categoryId),
+    imageId: w.imageId ?? null,
+    accepted: kind === 'answer' ? [w.term, ...(w.alternates ?? [])] : [],
+    options,
+    correctIndex,
+  }
 }
 
 // ---------------------------------------------------------------------------

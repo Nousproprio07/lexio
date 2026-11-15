@@ -1,9 +1,11 @@
-import { BookPlus, Pencil, Plus, Search, SearchX, Trash2, X } from 'lucide-react'
+import { ArrowRight, BookPlus, Landmark, Pencil, Plus, Search, SearchX, Trash2, X } from 'lucide-react'
 import { useDeferredValue, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { useWordDialogs } from '../components/WordDialogs'
+import { looksLikeQuestion } from '../lib/entries'
 import { EmptyState, PageHeader, plural, StatusBadge } from '../components/ui'
 import { searchKey } from '../lib/normalize'
-import { STATUS_LABELS, type Status, type Word } from '../lib/types'
+import { isQuestion, STATUS_LABELS, type Status, type Word } from '../lib/types'
 import { useData } from '../state/data'
 
 type Sort = 'recent' | 'oldest' | 'az' | 'za'
@@ -26,14 +28,22 @@ function loadFilters(scope: string): Filters {
 }
 
 export function DictionaryPage() {
-  const { words, categories, progress, categoryName, scope } = useData()
+  const { words: entries, categories: allCategories, progress, categoryName, scope } = useData()
+  // la culture générale a sa propre page
+  const words = useMemo(() => entries.filter((w) => !isQuestion(w)), [entries])
+  const categories = useMemo(() => {
+    const questionOnly = new Set(entries.filter(isQuestion).map((w) => w.categoryId))
+    for (const w of words) questionOnly.delete(w.categoryId)
+    return allCategories.filter((c) => !questionOnly.has(c.id))
+  }, [entries, words, allCategories])
+  const misplaced = useMemo(() => words.filter((w) => looksLikeQuestion(w, categoryName(w.categoryId))).length, [words, categoryName])
   const { openNew, openDetail, openEdit, requestDelete } = useWordDialogs()
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<Filters>(() => loadFilters(scope))
   const [limit, setLimit] = useState(PAGE)
   const deferredQuery = useDeferredValue(query)
   // catégorie mémorisée puis supprimée : retour à « toutes »
-  if (filters.category && filters.category !== '__none' && !categories.some((c) => c.id === filters.category)) {
+  if (filters.category && filters.category !== '__none' && !allCategories.some((c) => c.id === filters.category)) {
     setFilters((f) => ({ ...f, category: '' }))
   }
   const sentinel = useRef<HTMLDivElement>(null)
@@ -113,6 +123,20 @@ export function DictionaryPage() {
           </button>
         }
       />
+
+      {misplaced > 0 && (
+        <Link
+          to="/culture"
+          className="card mb-5 flex items-center gap-3 border-amber-200 bg-amber-50/60 p-4 text-[15px] transition-colors hover:bg-amber-50"
+        >
+          <Landmark className="size-5 shrink-0 text-amber-700" aria-hidden />
+          <span className="min-w-0 flex-1 text-amber-950">
+            {misplaced > 1 ? `${misplaced} entrées ressemblent` : '1 entrée ressemble'} à des questions de culture générale.{' '}
+            <span className="font-semibold">Les déplacer</span>
+          </span>
+          <ArrowRight className="size-4.5 shrink-0 text-amber-700" aria-hidden />
+        </Link>
+      )}
 
       {words.length === 0 ? (
         <EmptyState

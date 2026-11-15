@@ -1,4 +1,4 @@
-import { BookOpen, ChartColumn, House, LockKeyhole, Plus, Settings, Sparkles, TriangleAlert } from 'lucide-react'
+import { BookOpen, ChartColumn, House, Landmark, LockKeyhole, Plus, Settings, Sparkles, TriangleAlert } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { useData } from '../state/data'
@@ -6,7 +6,8 @@ import { useWordDialogs } from './WordDialogs'
 
 const NAV = [
   { to: '/', label: 'Accueil', icon: House, end: true },
-  { to: '/dictionnaire', label: 'Dictionnaire', icon: BookOpen, end: false },
+  { to: '/dictionnaire', label: 'Mots', icon: BookOpen, end: false },
+  { to: '/culture', label: 'Culture G.', icon: Landmark, end: false },
   { to: '/quiz', label: 'Quiz', icon: Sparkles, end: false },
   { to: '/progression', label: 'Progression', icon: ChartColumn, end: false },
 ]
@@ -26,7 +27,7 @@ export function Logo({ className = '' }: { className?: string }) {
 
 export function Layout() {
   const { persistent, lock } = useData()
-  const { openNew } = useWordDialogs()
+  const { openNew, openNewQuestion } = useWordDialogs()
   const { pathname } = useLocation()
   const inQuiz = pathname.startsWith('/quiz/session')
 
@@ -63,6 +64,10 @@ export function Layout() {
         <button type="button" className="btn-primary mt-6" onClick={openNew}>
           <Plus className="size-4.5" aria-hidden />
           Ajouter un mot
+        </button>
+        <button type="button" className="btn-secondary mt-2" onClick={openNewQuestion}>
+          <Landmark className="size-4.5 text-brand" aria-hidden />
+          Ajouter une question
         </button>
         <div className="mt-auto">
           <NavLink
@@ -124,7 +129,7 @@ export function Layout() {
           aria-label="Navigation principale"
           className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
         >
-          <ul className="grid grid-cols-4">
+          <ul className="grid grid-cols-5">
             {NAV.map(({ to, label, icon: Icon, end }) => (
               <li key={to}>
                 <NavLink

@@ -1,24 +1,24 @@
 import type { ReactNode } from 'react'
-import { ArrowRight, BookPlus, CalendarCheck, Flame, GraduationCap, Library, Play, Plus, RotateCcw, Sparkles } from 'lucide-react'
+import { ArrowRight, BookPlus, CalendarCheck, Flame, GraduationCap, Landmark, Library, Play, Plus, RotateCcw, Sparkles } from 'lucide-react'
 import { Link, useNavigate } from 'react-router'
 import { useWordDialogs } from '../components/WordDialogs'
 import { EmptyState, plural } from '../components/ui'
 import { useData } from '../state/data'
-import { SMART_REVIEW, useQuiz } from '../state/quiz'
+import { SMART_CULTURE, SMART_REVIEW, useQuiz } from '../state/quiz'
 import { useStats } from '../state/stats'
 
 export function HomePage() {
   const { words, lastBackup } = useData()
   const stats = useStats()
-  const { openNew } = useWordDialogs()
+  const { openNew, openNewQuestion } = useWordDialogs()
   const { run, start } = useQuiz()
   const navigate = useNavigate()
   const activeRun = run && !run.finishedAt ? run : null
   const backupDue = words.length >= 10 && (!lastBackup || Date.now() - new Date(lastBackup).getTime() > 30 * 86_400_000)
 
-  const reviewNow = () => {
+  const reviewNow = (config = SMART_REVIEW) => {
     if (activeRun) return navigate('/quiz')
-    if (start(SMART_REVIEW)) navigate('/quiz/session')
+    if (start(config)) navigate('/quiz/session')
   }
 
   return (
@@ -104,11 +104,49 @@ export function HomePage() {
               </div>
             </div>
             {stats.due > 0 && (
-              <button type="button" className="btn-primary mt-5 w-full sm:w-auto" onClick={reviewNow}>
+              <button type="button" className="btn-primary mt-5 w-full sm:w-auto" onClick={() => reviewNow()}>
                 Réviser maintenant
                 <ArrowRight className="size-4.5" aria-hidden />
               </button>
             )}
+          </section>
+
+          <section aria-labelledby="culture-title" className="card p-5 md:p-6">
+            <div className="flex items-start gap-4">
+              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+                <Landmark className="size-5" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="culture-title" className="font-semibold">
+                  Culture générale
+                </h2>
+                <p className="mt-0.5 text-[15px] text-muted">
+                  {stats.questions === 0
+                    ? 'Peintres, écrivains, monuments : retrouvez-les grâce à des photos.'
+                    : stats.questionsDue > 0
+                      ? `${plural(stats.questionsDue, 'question')} à réviser aujourd'hui, sur ${stats.questions}.`
+                      : `${plural(stats.questions, 'question')}, toutes à jour.`}
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              {stats.questionsDue > 0 && (
+                <button type="button" className="btn-primary" onClick={() => reviewNow(SMART_CULTURE)}>
+                  Réviser maintenant
+                  <ArrowRight className="size-4.5" aria-hidden />
+                </button>
+              )}
+              {stats.questions > 0 && stats.questionsDue === 0 && (
+                <Link to="/quiz?section=culture" className="btn-secondary">
+                  <Play className="size-4.5 text-brand" aria-hidden />
+                  S'entraîner
+                </Link>
+              )}
+              <button type="button" className="btn-secondary" onClick={openNewQuestion}>
+                <Plus className="size-4.5 text-brand" aria-hidden />
+                Ajouter une question
+              </button>
+            </div>
           </section>
 
           {backupDue && (

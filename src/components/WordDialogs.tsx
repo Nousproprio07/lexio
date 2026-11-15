@@ -1,21 +1,32 @@
-import { CalendarClock, Pencil, Plus, Trash2 } from 'lucide-react'
+import { CalendarClock, Landmark, Pencil, Plus, Trash2 } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { DuplicateError } from '../data/repository'
 import { textKey } from '../lib/normalize'
 import { LIMITS } from '../lib/transfer'
-import type { Word } from '../lib/types'
+import { isQuestion, type Word } from '../lib/types'
 import { useData, type WordDraft } from '../state/data'
 import { useToast } from '../state/toast'
+import { QuestionFormDialog } from './QuestionForm'
+import { QuestionImage } from './QuestionImage'
 import { ConfirmDialog, Modal, Spinner, StatusBadge } from './ui'
 
 /** Catégories proposées tant que l'utilisateur ne les a pas créées. */
 const SUGGESTED_CATEGORIES = ['Français', 'Économie', 'Finance', 'Philosophie', 'Culture générale', 'Autre']
 
-type View = { kind: 'form'; word: Word | null } | { kind: 'detail'; wordId: string } | null
+type View =
+  | { kind: 'form'; word: Word | null }
+  | { kind: 'question-form'; word: Word | null }
+  | { kind: 'detail'; wordId: string }
+  | null
 
 interface WordDialogsApi {
   openNew(): void
+  /** Nouvelle question de culture générale. */
+  openNewQuestion(): void
+  /** Mot ou question, selon l'entrée. */
   openEdit(word: Word): void
+  /** Transforme un mot (saisi dans « Mots ») en question de culture générale. */
+  openConvert(word: Word): void
   openDetail(word: Word): void
   requestDelete(word: Word): void
 }
@@ -38,7 +49,9 @@ export function WordDialogsProvider({ children }: { children: ReactNode }) {
   const api = useMemo<WordDialogsApi>(
     () => ({
       openNew: () => setView({ kind: 'form', word: null }),
-      openEdit: (word) => setView({ kind: 'form', word }),
+      openNewQuestion: () => setView({ kind: 'question-form', word: null }),
+      openEdit: (word) => setView({ kind: isQuestion(word) ? 'question-form' : 'form', word }),
+      openConvert: (word) => setView({ kind: 'question-form', word }),
       openDetail: (word) => setView({ kind: 'detail', wordId: word.id }),
       requestDelete: (word) => setToDelete(word),
     }),
@@ -52,7 +65,7 @@ export function WordDialogsProvider({ children }: { children: ReactNode }) {
     setDeleting(true)
     try {
       await deleteWord(toDelete.id)
-      notify(`« ${toDelete.term} » supprimé`)
+      notify(isQuestion(toDelete) ? 'Question supprimée' : `« ${toDelete.term} » supprimé`)
       if (view?.kind === 'detail' && view.wordId === toDelete.id) setView(null)
       setToDelete(null)
     } catch (e) {
@@ -66,14 +79,27 @@ export function WordDialogsProvider({ children }: { children: ReactNode }) {
     <Ctx.Provider value={api}>
       {children}
       <WordFormDialog open={view?.kind === 'form'} word={view?.kind === 'form' ? view.word : null} onClose={close} onEditExisting={api.openEdit} />
+      <QuestionFormDialog
+        open={view?.kind === 'question-form'}
+        word={view?.kind === 'question-form' ? view.word : null}
+        onClose={close}
+        onEditExisting={api.openEdit}
+      />
       <WordDetailDialog wordId={view?.kind === 'detail' ? view.wordId : null} onClose={close} />
       <ConfirmDialog
         open={toDelete !== null}
-        title="Supprimer ce mot ?"
+        title={toDelete && isQuestion(toDelete) ? 'Supprimer cette question ?' : 'Supprimer ce mot ?'}
         message={
-          <>
-            <strong className="text-ink">« {toDelete?.term} »</strong> et sa progression seront définitivement supprimés.
-          </>
+          toDelete && isQuestion(toDelete) ? (
+            <>
+              La question <strong className="text-ink">« {toDelete.definition} »</strong> (réponse : {toDelete.term}), son image et sa progression seront
+              définitivement supprimées.
+            </>
+          ) : (
+            <>
+              <strong className="text-ink">« {toDelete?.term} »</strong> et sa progression seront définitivement supprimés.
+            </>
+          )
         }
         confirmLabel="Supprimer"
         busy={deleting}
@@ -363,15 +389,16 @@ function relativeDue(iso: string | null): string {
 
 function WordDetailDialog({ wordId, onClose }: { wordId: string | null; onClose: () => void }) {
   const { wordById, progress, categoryName } = useData()
-  const { openEdit, requestDelete } = useWordDialogs()
+  const { openEdit, openConvert, requestDelete } = useWordDialogs()
   const word = wordId ? wordById.get(wordId) : undefined
   const p = word ? progress.get(word.id) : undefined
+  const question = !!word && isQuestion(word)
 
   return (
     <Modal
       open={!!word}
       onClose={onClose}
-      title={<span className="break-words">{word?.term}</span>}
+      title={<span className="break-words">{question ? 'Question de culture générale' : word?.term}</span>}
       footer={
         word && (
           <div className="flex gap-2 sm:justify-end">
@@ -395,13 +422,30 @@ function WordDetailDialog({ wordId, onClose }: { wordId: string | null; onClose:
               <span className="rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-muted">{categoryName(word.categoryId)}</span>
             )}
           </div>
-          <section>
-            <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Définition</h3>
-            <p className="text-[16px] leading-relaxed break-words whitespace-pre-line">{word.definition}</p>
-          </section>
+          {question ? (
+            <>
+              {word.imageId && (
+                <QuestionImage imageId={word.imageId} alt={`Image de la question : ${word.term}`} className="max-h-80 w-full rounded-2xl bg-slate-50" />
+              )}
+              <section>
+                <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Question</h3>
+                <p className="text-[16px] leading-relaxed break-words whitespace-pre-line">{word.definition}</p>
+              </section>
+              <section>
+                <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Réponse</h3>
+                <p className="text-xl font-bold tracking-tight break-words">{word.term}</p>
+                {!!word.alternates?.length && <p className="mt-1 text-sm text-muted">Aussi accepté : {word.alternates.join(', ')}</p>}
+              </section>
+            </>
+          ) : (
+            <section>
+              <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Définition</h3>
+              <p className="text-[16px] leading-relaxed break-words whitespace-pre-line">{word.definition}</p>
+            </section>
+          )}
           {word.example && (
             <section>
-              <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Exemple</h3>
+              <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">{question ? 'Le saviez-vous ?' : 'Exemple'}</h3>
               <p className="border-l-2 border-brand/30 pl-3 text-[15px] leading-relaxed text-slate-700 italic break-words whitespace-pre-line">
                 {word.example}
               </p>
@@ -424,7 +468,15 @@ function WordDetailDialog({ wordId, onClose }: { wordId: string | null; onClose:
               </dd>
             </div>
           </dl>
-          <p className="text-xs text-muted">Ajouté le {dateFmt.format(new Date(word.createdAt))}</p>
+          <p className="text-xs text-muted">
+            {question ? 'Ajoutée' : 'Ajouté'} le {dateFmt.format(new Date(word.createdAt))}
+          </p>
+          {!question && (
+            <button type="button" className="flex items-center gap-1.5 text-sm font-medium text-brand hover:underline" onClick={() => openConvert(word)}>
+              <Landmark className="size-4" aria-hidden />
+              C'est une question de culture générale ? La transformer
+            </button>
+          )}
         </div>
       )}
     </Modal>

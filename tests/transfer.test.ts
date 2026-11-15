@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeImport, parseCsv, parseCsvImport, parseJsonImport, toCsv, toJsonExport, wordKey } from '../src/lib/transfer'
+import { dedupeImport, entryKey, parseCsv, parseCsvImport, parseJsonImport, toCsv, toJsonExport, wordKey } from '../src/lib/transfer'
 import { review } from '../src/lib/srs'
 import type { Category, Word } from '../src/lib/types'
 
@@ -56,8 +56,38 @@ describe('JSON', () => {
     const json = JSON.stringify(toJsonExport(words, cats, progress, new Date()))
     const res = parseJsonImport(json)
     expect(res.issues).toEqual([])
-    expect(res.rows).toEqual([{ term: 'Liquidité', definition: 'Facilité de conversion en monnaie.', category: 'Finance', example: null }])
-    expect(res.progress?.get(wordKey('Liquidité', 'Finance'))?.successes).toBe(1)
+    const { progress: restored, ...row } = res.rows[0]
+    expect(row).toEqual({ term: 'Liquidité', definition: 'Facilité de conversion en monnaie.', category: 'Finance', example: null })
+    expect(restored?.successes).toBe(1)
+  })
+
+  it('relit la progression des anciennes sauvegardes', () => {
+    const old = {
+      words: [{ term: 'Liquidité', definition: 'x', category: 'Finance', example: null }],
+      progress: [{ ...review(null, 'Liquidité', true, new Date(2026, 9, 1)), term: 'Liquidité', category: 'Finance' }],
+    }
+    expect(parseJsonImport(JSON.stringify(old)).progress?.get(wordKey('Liquidité', 'Finance'))?.successes).toBe(1)
+  })
+
+  it('aller-retour d’une question de culture générale avec son image', () => {
+    const q: Word = {
+      ...w('Claude Monet', 'Qui a peint ce tableau ?', null),
+      kind: 'question',
+      imageId: 'img1',
+      alternates: ['Monet'],
+      example: 'Impression, soleil levant.',
+    }
+    const json = JSON.stringify(toJsonExport([q], [], new Map(), new Date(), new Map([['img1', 'data:image/jpeg;base64,AAAA']])))
+    const [row] = parseJsonImport(json).rows
+    expect(row).toMatchObject({
+      kind: 'question',
+      term: 'Claude Monet',
+      definition: 'Qui a peint ce tableau ?',
+      alternates: ['Monet'],
+      image: 'data:image/jpeg;base64,AAAA',
+      example: 'Impression, soleil levant.',
+    })
+    expect(toCsv([q], () => null)).not.toContain('Monet')
   })
 
   it('rejette un JSON invalide ou mal formé', () => {
@@ -78,5 +108,19 @@ describe('doublons', () => {
     const { fresh, duplicates } = dedupeImport(rows, new Set([wordKey('INFLATION', 'économie')]))
     expect(fresh.map((r) => r.definition)).toEqual(['a', 'c'])
     expect(duplicates).toBe(2)
+  })
+
+  it('deux tableaux du même peintre ne sont pas des doublons', () => {
+    const base = { kind: 'question' as const, term: 'Claude Monet', definition: 'Qui a peint ce tableau ?', category: 'Peintres', example: null }
+    const rows = [
+      { ...base, imageId: 'a' },
+      { ...base, imageId: 'b' },
+      { ...base, imageId: 'a' },
+    ]
+    const { fresh, duplicates } = dedupeImport(rows, new Set())
+    expect(fresh.map((r) => r.imageId)).toEqual(['a', 'b'])
+    expect(duplicates).toBe(1)
+    // une question n'entre pas en conflit avec un mot de même intitulé
+    expect(entryKey({ ...base, imageId: null })).not.toBe(wordKey('Claude Monet', 'Peintres'))
   })
 })

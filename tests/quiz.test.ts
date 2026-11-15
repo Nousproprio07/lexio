@@ -13,6 +13,7 @@ import {
   type SessionFilters,
   type SessionSize,
 } from '../src/lib/quiz'
+import { looksLikeQuestion, parseAlternates, sameEntry } from '../src/lib/entries'
 import { isCorrectAnswer, normalizeAnswer } from '../src/lib/normalize'
 import { review } from '../src/lib/srs'
 import type { Word, WordProgress } from '../src/lib/types'
@@ -186,5 +187,72 @@ describe('série de jours et mots difficiles', () => {
     progress.set(dict[1].id, review(p, dict[1].id, false, now))
     progress.set(dict[2].id, review(null, dict[2].id, true, now))
     expect(hardestWords(dict, progress).map((w) => w.term)).toEqual(['Éphémère', 'Résilience'])
+  })
+})
+
+describe('culture générale', () => {
+  const q = (answer: string, question: string, categoryId: string | null = 'peintres', imageId: string | null = null): Word => ({
+    ...word(answer, question, categoryId),
+    kind: 'question',
+    imageId,
+    alternates: [],
+  })
+  const painters = [
+    q('Claude Monet', 'Qui a peint ce tableau ?', 'peintres', 'i1'),
+    q('Claude Monet', 'Qui a peint ce tableau ?', 'peintres', 'i2'),
+    q('Pablo Picasso', 'Qui a peint ce tableau ?', 'peintres', 'i3'),
+    q('Vincent van Gogh', 'Qui a peint ce tableau ?', 'peintres', 'i4'),
+    q('Frida Kahlo', 'Qui a peint ce tableau ?', 'peintres', 'i5'),
+    q('Tour Eiffel', 'Quel est ce monument ?', 'monuments', 'i6'),
+  ]
+  const all = [...dict, ...painters]
+
+  it('les sessions de mots et de culture générale restent séparées', () => {
+    const wordsOnly = selectWords(all, new Map(), noFilter, 'all', now, seededRng(1))
+    expect(wordsOnly.every((w) => w.kind !== 'question')).toBe(true)
+    const culture = selectWords(all, new Map(), { ...noFilter, section: 'question' }, 'all', now, seededRng(1))
+    expect(culture).toHaveLength(painters.length)
+  })
+
+  it('propose 4 réponses distinctes tirées des autres questions, de préférence de la même catégorie', () => {
+    for (let seed = 1; seed < 30; seed++) {
+      const [question] = buildQuestions([painters[0]], all, 'definition', catName, seededRng(seed))
+      expect(question.kind).toBe('choice')
+      expect(question.imageId).toBe('i1')
+      const texts = question.options.map((o) => o.text)
+      expect(new Set(texts).size).toBe(4)
+      expect(texts[question.correctIndex]).toBe('Claude Monet')
+      // jamais de définition de mot, et les peintres passent avant les monuments
+      expect(texts).not.toContain('Tour Eiffel')
+      expect(texts.some((t) => dict.some((d) => d.definition === t))).toBe(false)
+    }
+  })
+
+  it('saisie : accepte la réponse et ses variantes, rien d’autre', () => {
+    const monet = { ...painters[0], alternates: ['Monet'] }
+    const [question] = buildQuestions([monet], all, 'word', catName, seededRng(1))
+    expect(question.kind).toBe('answer')
+    expect(isCorrectAnswer('monet', question.accepted, false)).toBe(true)
+    expect(isCorrectAnswer('Claude Monet', question.accepted, false)).toBe(true)
+    expect(isCorrectAnswer('Picasso', question.accepted, false)).toBe(false)
+  })
+
+  it('moins de 4 réponses différentes : on révèle la réponse', () => {
+    const few = painters.slice(0, 3)
+    const [question] = buildQuestions([few[0]], few, 'definition', catName, seededRng(1))
+    expect(question.kind).toBe('flash')
+  })
+
+  it('doublons : même question, même réponse et même image', () => {
+    expect(sameEntry(painters[0], painters[1])).toBe(false)
+    expect(sameEntry(painters[0], { ...painters[0] })).toBe(true)
+    expect(sameEntry(painters[0], { ...painters[0], kind: undefined })).toBe(false)
+  })
+
+  it('repère les questions saisies dans « Mots »', () => {
+    expect(looksLikeQuestion(word('Qui a peint la Joconde ?', 'Léonard de Vinci'), null)).toBe(true)
+    expect(looksLikeQuestion(word('Tour Eiffel', 'Monument parisien'), 'Culture générale')).toBe(true)
+    expect(looksLikeQuestion(word('Résilience', 'Capacité…'), 'Français')).toBe(false)
+    expect(parseAlternates('Monet, C. Monet ; monet')).toEqual(['Monet', 'C. Monet'])
   })
 })

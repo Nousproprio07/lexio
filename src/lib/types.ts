@@ -8,15 +8,36 @@ export interface Category {
   createdAt: string
 }
 
+/**
+ * Nature d'une entrée :
+ *  - word : un mot et sa définition (section Mots) ;
+ *  - question : une question de culture générale, avec une image facultative.
+ */
+export type EntryKind = 'word' | 'question'
+
+/**
+ * Entrée du dictionnaire. Pour une question de culture générale :
+ * `term` = la bonne réponse, `definition` = la question posée,
+ * `example` = l'explication (« Le saviez-vous ? »).
+ */
 export interface Word {
   id: string
+  /** Absent sur les mots enregistrés avant la culture générale. */
+  kind?: EntryKind
   term: string
   definition: string
   example: string | null
   categoryId: string | null
+  /** Question : identifiant de l'image (stockée à part, chiffrée). */
+  imageId?: string | null
+  /** Question : autres réponses acceptées en saisie (« Monet » pour « Claude Monet »). */
+  alternates?: string[]
   createdAt: string
   updatedAt: string
 }
+
+export const entryKind = (w: Pick<Word, 'kind'>): EntryKind => w.kind ?? 'word'
+export const isQuestion = (w: Pick<Word, 'kind'>) => w.kind === 'question'
 
 export interface WordProgress {
   wordId: string
@@ -40,9 +61,13 @@ export type QuizMode = 'word' | 'definition' | 'mixed'
  * Type d'une question précise :
  *  - word : définition affichée, saisir le mot (mode A) ;
  *  - definition : mot affiché, choisir parmi 4 définitions (mode B) ;
- *  - recall : mot affiché, révéler la définition puis s'auto-évaluer (repli du mode B).
+ *  - recall : mot affiché, révéler la définition puis s'auto-évaluer (repli du mode B) ;
+ * et pour une question de culture générale (image + question affichées) :
+ *  - answer : écrire la réponse ;
+ *  - choice : choisir parmi 4 réponses ;
+ *  - flash : révéler la réponse puis s'auto-évaluer (repli de choice).
  */
-export type QuestionKind = 'word' | 'definition' | 'recall'
+export type QuestionKind = 'word' | 'definition' | 'recall' | 'answer' | 'choice' | 'flash'
 
 export interface QuizSession {
   id: string
@@ -75,5 +100,12 @@ export const STATUS_LABELS: Record<Status, string> = {
 export const MODE_LABELS: Record<QuizMode, string> = {
   word: 'Retrouver le mot',
   definition: 'Retrouver la définition',
+  mixed: 'Mixte',
+}
+
+/** Mêmes modes, appliqués aux questions de culture générale. */
+export const CULTURE_MODE_LABELS: Record<QuizMode, string> = {
+  word: 'Écrire la réponse',
+  definition: 'Choisir la réponse',
   mixed: 'Mixte',
 }
