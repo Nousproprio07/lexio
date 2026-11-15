@@ -21,6 +21,7 @@ export interface ImportRow {
   image?: string | null
   imageCredit?: string | null
   imageAsClue?: boolean
+  keywords?: string[]
   /** Empreinte de l'image, calculée avant l'import (détection des doublons). */
   imageId?: string | null
   /** Progression enregistrée avec l'entrée (sauvegardes récentes). */
@@ -169,6 +170,7 @@ export interface LexioExport {
     image?: string | null
     imageCredit?: string | null
     imageAsClue?: boolean
+    keywords?: string[]
     progress?: RestoredProgress
   }[]
   /** Anciennes sauvegardes : progression à part, retrouvée par mot + catégorie. */
@@ -205,6 +207,7 @@ export function toJsonExport(
       if (isQuestion(w)) {
         entry.kind = 'question'
         entry.alternates = w.alternates ?? []
+        if (w.keywords?.length) entry.keywords = w.keywords
         entry.image = w.imageId ? (images.get(w.imageId) ?? null) : null
         if (entry.image && w.imageCredit) entry.imageCredit = w.imageCredit
         if (entry.image && w.imageAsClue) entry.imageAsClue = true
@@ -249,6 +252,7 @@ export function parseJsonImport(text: string): ImportParseResult {
     if (o.kind === 'question') {
       row.kind = 'question'
       row.alternates = Array.isArray(o.alternates) ? o.alternates.filter((a): a is string => typeof a === 'string' && a.trim() !== '').map((a) => a.trim()) : []
+      row.keywords = Array.isArray(o.keywords) ? o.keywords.filter((k): k is string => typeof k === 'string' && k.trim() !== '').map((k) => k.trim()) : []
       row.image = typeof o.image === 'string' && o.image.startsWith('data:image/') ? o.image : null
       row.imageCredit = row.image && typeof o.imageCredit === 'string' ? o.imageCredit.slice(0, 500) : null
       row.imageAsClue = !!row.image && o.imageAsClue === true

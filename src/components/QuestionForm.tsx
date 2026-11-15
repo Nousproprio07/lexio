@@ -1,6 +1,7 @@
 import { ArrowUpDown, Globe, ImagePlus, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { parseAlternates, questionRefersToImage } from '../lib/entries'
+import { autoKeywords, isLongAnswer } from '../lib/grading'
 import { compressImage } from '../lib/image'
 import { textKey } from '../lib/normalize'
 import { LIMITS } from '../lib/transfer'
@@ -23,6 +24,7 @@ interface FormState {
   question: string
   answer: string
   alternates: string
+  keywords: string
   category: string
   example: string
   /** Image déjà enregistrée. */
@@ -41,6 +43,7 @@ const emptyForm: FormState = {
   question: '',
   answer: '',
   alternates: '',
+  keywords: '',
   category: '',
   example: '',
   imageId: null,
@@ -88,6 +91,7 @@ export function QuestionFormDialog({
         question: word.definition,
         answer: word.term,
         alternates: (word.alternates ?? []).join(', '),
+        keywords: (word.keywords ?? []).join(', '),
         category: categoryName(word.categoryId) ?? '',
         example: word.example ?? '',
         imageId: word.imageId ?? null,
@@ -127,6 +131,7 @@ export function QuestionFormDialog({
     imageCredit: form.imageCredit,
     imageAsClue: form.imageAsClue,
     alternates: parseAlternates(form.alternates),
+    keywords: parseAlternates(form.keywords),
   }
   // une nouvelle image rend la question distincte : pas de doublon possible avant l'enregistrement
   const duplicate = draft.term && draft.definition && !form.image ? findDuplicate(draft, word?.id) : undefined
@@ -134,6 +139,7 @@ export function QuestionFormDialog({
     question: !draft.definition ? 'Indiquez la question.' : draft.definition.length > LIMITS.definition ? `${LIMITS.definition} caractères maximum.` : null,
     answer: !draft.term ? 'Indiquez la bonne réponse.' : draft.term.length > LIMITS.answer ? `${LIMITS.answer} caractères maximum.` : null,
     alternates: form.alternates.length > LIMITS.example ? `${LIMITS.example} caractères maximum.` : null,
+    keywords: form.keywords.length > LIMITS.example ? `${LIMITS.example} caractères maximum.` : null,
     category: (draft.categoryName?.length ?? 0) > LIMITS.category ? `${LIMITS.category} caractères maximum.` : null,
     example: (draft.example?.length ?? 0) > LIMITS.example ? `${LIMITS.example} caractères maximum.` : null,
   }
@@ -197,7 +203,10 @@ export function QuestionFormDialog({
     question,
     imageAsClue: f.clueTouched ? f.imageAsClue : questionRefersToImage(question),
   })
-  const set = (k: 'question' | 'answer' | 'alternates' | 'category' | 'example') => (e: { target: { value: string } }) =>
+  const longAnswer = isLongAnswer(form.answer)
+  const detected = useMemo(() => (longAnswer ? autoKeywords(form.answer).keywords.map((k) => k.label) : []), [longAnswer, form.answer])
+
+  const set = (k: 'question' | 'answer' | 'alternates' | 'keywords' | 'category' | 'example') => (e: { target: { value: string } }) =>
     setForm((f) => (k === 'question' ? withQuestion(f, e.target.value) : { ...f, [k]: e.target.value }))
   const show = (msg: string | null) => (submitted ? msg : null)
   const hasImage = !!form.image || !!form.imageId
@@ -418,6 +427,28 @@ export function QuestionFormDialog({
             Séparées par une virgule. Utile quand vous écrivez la réponse au lieu de la choisir.
           </p>
         </Field>
+
+        {(longAnswer || form.keywords.trim() !== '') && (
+          <Field label="Mots-clés à retrouver" optional error={show(errors.keywords)} htmlFor="qf-kw">
+            <input
+              id="qf-kw"
+              className="field"
+              value={form.keywords}
+              onChange={set('keywords')}
+              placeholder={detected.length ? detected.slice(0, 6).join(', ') : 'Ex. Prado, XIIe, XIXe, Reina Sofía, XXe'}
+              autoComplete="off"
+              aria-describedby="qf-kw-help"
+            />
+            <p id="qf-kw-help" className="mt-1.5 text-sm text-muted">
+              Réponse longue : quand vous l’écrivez, Lexio vérifie qu’elle contient l’essentiel plutôt que la phrase exacte.{' '}
+              {form.keywords.trim()
+                ? 'Tous les mots-clés indiqués ici seront exigés.'
+                : detected.length
+                  ? `Sans rien indiquer, il cherche : ${detected.join(', ')} (70 % suffisent).`
+                  : 'Indiquez les mots indispensables, séparés par une virgule.'}
+            </p>
+          </Field>
+        )}
 
         <Field label="Catégorie" optional error={show(errors.category)} htmlFor="qf-cat">
           <input

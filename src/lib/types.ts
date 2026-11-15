@@ -39,6 +39,8 @@ export interface Word {
   imageAsClue?: boolean
   /** Question : autres réponses acceptées en saisie (« Monet » pour « Claude Monet »). */
   alternates?: string[]
+  /** Question à réponse longue : mots-clés à retrouver en saisie (sinon détectés automatiquement). */
+  keywords?: string[]
   createdAt: string
   updatedAt: string
 }

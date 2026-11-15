@@ -10,6 +10,7 @@ export interface WordInput {
   imageCredit?: string | null
   imageAsClue?: boolean
   alternates?: string[]
+  keywords?: string[]
 }
 
 export interface Snapshot {

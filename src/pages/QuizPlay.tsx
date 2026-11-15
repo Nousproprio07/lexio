@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'rea
 import { Navigate, useNavigate } from 'react-router'
 import { QuestionImage } from '../components/QuestionImage'
 import { ProgressBar } from '../components/ui'
+import { gradeAnswer, isLongAnswer, type Grade } from '../lib/grading'
 import { isCorrectAnswer } from '../lib/normalize'
 import { maskTerm, type Question, type QuestionResult } from '../lib/quiz'
 import { useQuiz } from '../state/quiz'
@@ -116,11 +117,40 @@ function CultureExplain({ q }: { q: Question }) {
   )
 }
 
+/** Réponse longue corrigée par mots-clés : ce qui a été retrouvé ou non. */
+function KeywordReport({ grade }: { grade: Grade | null }) {
+  if (!grade?.keywords) return null
+  const found = grade.keywords.filter((k) => k.found).length
+  return (
+    <div className="mb-4">
+      <p className="mb-1.5 text-sm font-medium text-slate-700">
+        Mots-clés retrouvés : {found} sur {grade.keywords.length}
+      </p>
+      <ul className="flex flex-wrap gap-1.5" aria-label="Mots-clés">
+        {grade.keywords.map((k) => (
+          <li
+            key={k.label}
+            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[13px] font-medium ${
+              k.found ? 'bg-success text-white' : 'border border-danger/40 bg-white text-red-700 line-through decoration-1'
+            }`}
+          >
+            {k.found ? <Check className="size-3.5" aria-hidden /> : <X className="size-3.5" aria-hidden />}
+            {k.label}
+            <span className="sr-only">{k.found ? ' (trouvé)' : ' (manquant)'}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 /** Mode A : la définition est affichée, on saisit le mot (ou la réponse, en culture générale). */
 function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
   const [value, setValue] = useState('')
   const [ignoreAccents] = useIgnoreAccents()
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
+  // réponse attendue longue (une phrase) : zone de texte sur plusieurs lignes
+  const long = isCulture(q) && (!!q.keywords?.length || isLongAnswer(q.term))
 
   useEffect(() => {
     if (!result) inputRef.current?.focus({ preventScroll: true })
@@ -129,7 +159,8 @@ function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (result || !value.trim()) return
-    onAnswer({ correct: isCorrectAnswer(value, q.accepted, ignoreAccents), given: value.trim() })
+    const correct = isCulture(q) ? gradeAnswer(value, q.accepted, q.keywords ?? [], ignoreAccents).correct : isCorrectAnswer(value, q.accepted, ignoreAccents)
+    onAnswer({ correct, given: value.trim() })
   }
 
   return (
@@ -147,22 +178,45 @@ function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
         <label htmlFor="answer" className="sr-only">
           Votre réponse
         </label>
-        <input
-          ref={inputRef}
-          id="answer"
-          className={`field h-14 text-center text-lg font-semibold ${
-            result ? (result.correct ? 'border-success bg-success-soft text-green-900' : 'border-danger bg-danger-soft text-red-900 line-through decoration-2') : ''
-          }`}
-          placeholder="Votre réponse"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          readOnly={!!result}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize={isCulture(q) ? 'words' : 'off'}
-          spellCheck={false}
-          enterKeyHint="done"
-        />
+        {long ? (
+          <textarea
+            ref={inputRef}
+            id="answer"
+            rows={3}
+            className={`field resize-none text-[17px] leading-snug font-semibold ${
+              result ? (result.correct ? 'border-success bg-success-soft text-green-900' : 'border-danger bg-danger-soft text-red-900 line-through decoration-2') : ''
+            }`}
+            placeholder="L’essentiel : noms, dates, siècles…"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              // Entrée valide, Maj + Entrée passe à la ligne
+              if (e.key === 'Enter' && !e.shiftKey) submit(e)
+            }}
+            readOnly={!!result}
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="done"
+          />
+        ) : (
+          <input
+            ref={inputRef}
+            id="answer"
+            className={`field h-14 text-center text-lg font-semibold ${
+              result ? (result.correct ? 'border-success bg-success-soft text-green-900' : 'border-danger bg-danger-soft text-red-900 line-through decoration-2') : ''
+            }`}
+            placeholder="Votre réponse"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            readOnly={!!result}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize={isCulture(q) ? 'words' : 'off'}
+            spellCheck={false}
+            enterKeyHint="done"
+          />
+        )}
         {!result && (
           <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row">
             <button
@@ -182,6 +236,7 @@ function WordQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) {
 
       {result && isCulture(q) && (
         <Feedback correct={result.correct} onNext={onNext} isLast={isLast}>
+          <KeywordReport grade={result.given ? gradeAnswer(result.given, q.accepted, q.keywords ?? [], ignoreAccents) : null} />
           <CultureExplain q={q} />
         </Feedback>
       )}

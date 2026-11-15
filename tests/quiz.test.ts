@@ -14,6 +14,7 @@ import {
   type SessionSize,
 } from '../src/lib/quiz'
 import { defaultImageQuery, formatCredit } from '../src/lib/wiki'
+import { autoKeywords, gradeAnswer, tokenize } from '../src/lib/grading'
 import { looksLikeQuestion, parseAlternates, questionRefersToImage, sameEntry } from '../src/lib/entries'
 import { isCorrectAnswer, normalizeAnswer } from '../src/lib/normalize'
 import { review } from '../src/lib/srs'
@@ -282,5 +283,38 @@ describe('recherche d’images', () => {
     expect(formatCredit('Fichier:Mural_del_Gernika.jpg', '<a href="x">Papamanila</a>', 'CC BY-SA 3.0', true)).toBe(
       'Papamanila · CC BY-SA 3.0 · Wikimedia Commons, « Mural del Gernika.jpg »',
     )
+  })
+})
+
+describe('correction des réponses longues', () => {
+  const prado =
+    "Le Musée du Prado est un musée classique consacré à l'art européen du XIIe au XIXe siècle. Le Musée Reina Sofía est un musée d'art moderne et contemporain qui couvre le XXe siècle jusqu'à nos jours."
+
+  it('repère les noms propres et les siècles', () => {
+    expect(autoKeywords(prado).keywords.map((k) => k.label)).toEqual(['Musée', 'Prado', 'XIIe', 'XIXe', 'Reina', 'Sofía', 'XXe'])
+  })
+
+  it('accepte l’essentiel, avec fautes et siècles écrits autrement', () => {
+    const g = gradeAnswer('musée du prado du XII au XIX esielce et sofia du XXe a nos jours', [prado], [], false)
+    expect(g.correct).toBe(true)
+    expect(g.keywords?.filter((k) => !k.found).map((k) => k.label)).toEqual(['Reina'])
+    expect(gradeAnswer('Prado : 12e au 19e siècle ; Reina Sofia : 20e siècle', [prado], [], false).correct).toBe(true)
+  })
+
+  it('refuse une réponse à côté ou incomplète', () => {
+    expect(gradeAnswer('musée du louvre et beaubourg', [prado], [], false).correct).toBe(false)
+    expect(gradeAnswer('le prado', [prado], [], false).correct).toBe(false)
+  })
+
+  it('mots-clés choisis : tous requis', () => {
+    const kw = ['Prado', 'XIIe', 'XIXe', 'Reina Sofía', 'XXe']
+    expect(gradeAnswer('prado XII-XIX, reina sofia XX', [prado], kw, false).correct).toBe(true)
+    expect(gradeAnswer('prado XII-XIX, sofia XX', [prado], kw, false).correct).toBe(false)
+  })
+
+  it('réponse courte : comparaison exacte, comme avant', () => {
+    expect(gradeAnswer('Monet', ['Claude Monet'], [], false).correct).toBe(false)
+    expect(gradeAnswer('claude monet', ['Claude Monet'], [], false).correct).toBe(true)
+    expect(tokenize('Il aime la vie', true).some((t) => t.num !== null)).toBe(false)
   })
 })

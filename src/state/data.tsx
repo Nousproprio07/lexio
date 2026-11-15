@@ -23,6 +23,7 @@ export interface WordDraft {
   imageCredit?: string | null
   imageAsClue?: boolean
   alternates?: string[]
+  keywords?: string[]
 }
 
 interface DataApi {
@@ -74,6 +75,7 @@ function toInput(d: WordDraft, categoryId: string | null): WordInput {
     imageCredit: d.imageId ? (d.imageCredit ?? null) : null,
     imageAsClue: !!d.imageId && !!d.imageAsClue,
     alternates: d.alternates ?? [],
+    keywords: d.keywords ?? [],
   }
 }
 

@@ -146,6 +146,8 @@ export interface Question {
   imageCredit?: string | null
   /** L'image est l'indice (affichée avec la question) ; sinon elle n'apparaît qu'avec la réponse. */
   imageAsClue?: boolean
+  /** Culture, saisie d'une réponse longue : mots-clés imposés (sinon détectés automatiquement). */
+  keywords?: string[]
   /** Saisie : orthographes acceptées (mode A : mots partageant cette définition ; culture : réponse et variantes). */
   accepted: string[]
   /** Choix : quatre propositions mélangées (définitions, ou réponses en culture générale). */
@@ -302,6 +304,7 @@ function buildCultureQuestion(
     imageId: w.imageId ?? null,
     imageCredit: w.imageId ? (w.imageCredit ?? null) : null,
     imageAsClue: !!w.imageId && !!w.imageAsClue,
+    keywords: w.keywords ?? [],
     accepted: kind === 'answer' ? [w.term, ...(w.alternates ?? [])] : [],
     options,
     correctIndex,

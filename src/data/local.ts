@@ -342,6 +342,7 @@ export class LocalRepository implements Repository {
       delete w.imageCredit
       delete w.imageAsClue
       delete w.alternates
+      delete w.keywords
     }
     this.db = { ...this.db, words: this.db.words.map((x) => (x.id === id ? w : x)) }
     await this.save()

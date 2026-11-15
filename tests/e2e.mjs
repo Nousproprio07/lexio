@@ -368,6 +368,31 @@ async function run(label, contextOptions) {
   )
   check(keys.some((k) => String(k).startsWith('img:')), 'image rangée à part, chiffrée')
 
+  // --- réponse longue corrigée par mots-clés ------------------------------------------
+  await page.goto(`${BASE}/culture`)
+  await page.getByRole('button', { name: 'Ajouter une question' }).first().click()
+  await dialog.getByLabel('Question', { exact: true }).fill('Quelle est la différence entre le musée du Prado et le musée Reina Sofía ?')
+  await dialog
+    .getByLabel('Bonne réponse', { exact: true })
+    .fill("Le Musée du Prado est un musée classique consacré à l'art européen du XIIe au XIXe siècle. Le Musée Reina Sofía est un musée d'art moderne et contemporain qui couvre le XXe siècle jusqu'à nos jours.")
+  check(await dialog.getByText(/il cherche : Musée, Prado, XIIe, XIXe, Reina, Sofía, XXe/).isVisible(), 'mots-clés détectés affichés dans le formulaire')
+  await dialog.getByLabel(/^Catégorie/).fill('Musées')
+  await shot('20-reponse-longue-formulaire')
+  await dialog.getByRole('button', { name: 'Enregistrer la question' }).click()
+  await page.getByText('Question ajoutée').last().waitFor()
+  await dialog.getByRole('button', { name: 'Terminer' }).click()
+  await page.goto(`${BASE}/quiz?section=culture`)
+  await page.getByText('Écrire la réponse').click()
+  await page.getByLabel('Catégorie').selectOption({ label: 'Musées' })
+  await page.getByRole('button', { name: /Commencer · 1 question/ }).click()
+  await page.getByLabel('Votre réponse').fill('musée du prado du XII au XIX esielce et sofia du XXe a nos jours')
+  await page.keyboard.press('Enter')
+  check(await page.getByText('Bonne réponse !').isVisible(), 'réponse longue acceptée grâce aux mots-clés')
+  check(await page.getByText('Mots-clés retrouvés : 6 sur 7').isVisible(), 'mots-clés retrouvés : 6 sur 7')
+  await shot('21-reponse-longue-correction')
+  await page.keyboard.press('Enter')
+  await page.getByText(/bonnes? réponses?/).waitFor()
+
   // débordement horizontal
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   check(overflow <= 0, `aucun défilement horizontal (${overflow}px)`)
