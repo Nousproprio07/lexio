@@ -1,6 +1,7 @@
-import { ArrowRightLeft, ImageIcon, Landmark, Play, Plus, Search, SearchX, X } from 'lucide-react'
+import { ArrowRightLeft, Globe, ImageIcon, Landmark, Play, Plus, Search, SearchX, X } from 'lucide-react'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { ImageFillDialog } from '../components/ImageFillDialog'
 import { QuestionImage } from '../components/QuestionImage'
 import { useWordDialogs } from '../components/WordDialogs'
 import { EmptyState, PageHeader, plural, StatusBadge } from '../components/ui'
@@ -16,10 +17,12 @@ export function CulturePage() {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('')
   const deferredQuery = useDeferredValue(query)
+  const [filling, setFilling] = useState(false)
 
   const questions = useMemo(() => words.filter(isQuestion).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [words])
   // questions saisies dans « Mots » avant l'arrivée de cette section
   const misplaced = useMemo(() => words.filter((w) => looksLikeQuestion(w, categoryName(w.categoryId))), [words, categoryName])
+  const withoutImage = questions.filter((q) => !q.imageId).length
   const usedCategories = useMemo(() => {
     const used = new Set(questions.map((q) => q.categoryId))
     return categories.filter((c) => used.has(c.id))
@@ -78,6 +81,26 @@ export function CulturePage() {
           </ul>
         </section>
       )}
+
+      {withoutImage > 0 && (
+        <button
+          type="button"
+          onClick={() => setFilling(true)}
+          className="card mb-5 flex w-full items-center gap-3 border-brand/30 bg-brand-soft/50 p-4 text-left transition-colors hover:bg-brand-soft"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white">
+            <Globe className="size-5" aria-hidden />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-semibold">Ajouter de vraies images</span>
+            <span className="block text-sm text-muted">
+              {withoutImage > 1 ? `${withoutImage} questions n’ont pas d’image` : '1 question n’a pas d’image'} : portraits d’artistes, œuvres, lieux, depuis
+              Wikipédia.
+            </span>
+          </span>
+        </button>
+      )}
+      <ImageFillDialog open={filling} onClose={() => setFilling(false)} />
 
       {questions.length === 0 ? (
         <EmptyState

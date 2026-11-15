@@ -1,14 +1,16 @@
-import { ArrowUpDown, ImagePlus, Plus, Trash2 } from 'lucide-react'
+import { ArrowUpDown, Globe, ImagePlus, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { parseAlternates } from '../lib/entries'
 import { compressImage } from '../lib/image'
 import { textKey } from '../lib/normalize'
 import { LIMITS } from '../lib/transfer'
+import { defaultImageQuery } from '../lib/wiki'
 import { isQuestion, type Word } from '../lib/types'
 import { useData, type WordDraft } from '../state/data'
 import { useToast } from '../state/toast'
 import { QuestionImage } from './QuestionImage'
 import { Modal, Spinner } from './ui'
+import { WikiImagePicker } from './WikiImagePicker'
 import { errorMessage } from './WordDialogs'
 
 /** Catégories proposées pour la culture générale. */
@@ -55,6 +57,8 @@ export function QuestionFormDialog({
   const [preparing, setPreparing] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
   const [savedCount, setSavedCount] = useState(0)
+  /** Recherche d'image Wikipédia ouverte (texte de départ), ou null. */
+  const [webSearch, setWebSearch] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const converting = !!word && !isQuestion(word)
 
@@ -86,6 +90,7 @@ export function QuestionFormDialog({
     setSubmitted(false)
     setServerError(null)
     setSavedCount(0)
+    setWebSearch(null)
   }, [open, word, categoryName])
 
   // aperçu de la nouvelle image
@@ -151,6 +156,7 @@ export function QuestionFormDialog({
         notify('Question ajoutée')
         // prêt pour la suivante : on garde la question type et la catégorie, souvent les mêmes
         setForm({ ...emptyForm, question: form.question, category: form.category })
+        setWebSearch(null)
         setSubmitted(false)
         setSavedCount((n) => n + 1)
       }
@@ -160,6 +166,8 @@ export function QuestionFormDialog({
       setSaving(false)
     }
   }
+
+  const openWebSearch = () => setWebSearch(defaultImageQuery(form.answer, form.question))
 
   const set = (k: 'question' | 'answer' | 'alternates' | 'category' | 'example') => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }))
@@ -225,7 +233,20 @@ export function QuestionFormDialog({
               if (f) void pickImage(f)
             }}
           />
-          {hasImage || preparing ? (
+          {webSearch !== null ? (
+            <div className="rounded-2xl border border-line p-3">
+              <WikiImagePicker
+                initialQuery={webSearch}
+                onPick={(image) => {
+                  setForm((f) => ({ ...f, image, imageId: null }))
+                  setWebSearch(null)
+                }}
+              />
+              <button type="button" className="btn-ghost mt-2 w-full" onClick={() => setWebSearch(null)}>
+                Fermer la recherche
+              </button>
+            </div>
+          ) : hasImage || preparing ? (
             <div className="relative overflow-hidden rounded-2xl border border-line bg-slate-50">
               {preparing ? (
                 <div className="flex h-48 items-center justify-center">
@@ -238,6 +259,10 @@ export function QuestionFormDialog({
               )}
               {!preparing && (
                 <div className="absolute right-2 bottom-2 flex gap-1.5">
+                  <button type="button" className="btn-secondary h-9 px-3 text-sm shadow-sm" onClick={openWebSearch}>
+                    <Globe className="size-4 text-brand" aria-hidden />
+                    Chercher
+                  </button>
                   <button type="button" className="btn-secondary h-9 px-3 text-sm shadow-sm" onClick={() => fileRef.current?.click()}>
                     Changer
                   </button>
@@ -253,15 +278,26 @@ export function QuestionFormDialog({
               )}
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="flex h-32 w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-line text-muted transition-colors hover:border-brand hover:text-brand"
-            >
-              <ImagePlus className="size-7" aria-hidden />
-              <span className="text-[15px] font-medium">Ajouter une photo</span>
-              <span className="text-xs">Tableau, monument, portrait… (ou collez une image)</span>
-            </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={openWebSearch}
+                className="flex h-32 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-brand/40 bg-brand-soft/40 px-2 text-center text-brand transition-colors hover:border-brand"
+              >
+                <Globe className="size-7" aria-hidden />
+                <span className="text-[15px] font-medium">Chercher une vraie image</span>
+                <span className="text-xs text-muted">Artiste, œuvre, lieu (Wikipédia)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="flex h-32 flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-line px-2 text-center text-muted transition-colors hover:border-brand hover:text-brand"
+              >
+                <ImagePlus className="size-7" aria-hidden />
+                <span className="text-[15px] font-medium">Ajouter une photo</span>
+                <span className="text-xs">Depuis l’appareil, ou collez une image</span>
+              </button>
+            </div>
           )}
         </div>
 

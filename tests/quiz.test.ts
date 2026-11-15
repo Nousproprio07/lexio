@@ -13,6 +13,7 @@ import {
   type SessionFilters,
   type SessionSize,
 } from '../src/lib/quiz'
+import { defaultImageQuery } from '../src/lib/wiki'
 import { looksLikeQuestion, parseAlternates, sameEntry } from '../src/lib/entries'
 import { isCorrectAnswer, normalizeAnswer } from '../src/lib/normalize'
 import { review } from '../src/lib/srs'
@@ -254,5 +255,12 @@ describe('culture générale', () => {
     expect(looksLikeQuestion(word('Tour Eiffel', 'Monument parisien'), 'Culture générale')).toBe(true)
     expect(looksLikeQuestion(word('Résilience', 'Capacité…'), 'Français')).toBe(false)
     expect(parseAlternates('Monet, C. Monet ; monet')).toEqual(['Monet', 'C. Monet'])
+  })
+})
+
+describe('recherche d’images', () => {
+  it('cherche la réponse, ou le sujet de la question si la réponse est une phrase', () => {
+    expect(defaultImageQuery('Claude Monet', 'Qui a peint ce tableau ?')).toBe('Claude Monet')
+    expect(defaultImageQuery('x'.repeat(80), 'Où se trouve le musée du Prado ?')).toBe('le musée du Prado')
   })
 })
