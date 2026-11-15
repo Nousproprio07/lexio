@@ -106,7 +106,7 @@ function CulturePrompt({ q }: { q: Question }) {
 function CultureExplain({ q }: { q: Question }) {
   return (
     <>
-      <p className="text-2xl font-bold tracking-tight break-words">{q.term}</p>
+      <p className={`font-bold tracking-tight break-words whitespace-pre-line ${q.term.length > 60 ? 'text-lg leading-snug' : 'text-2xl'}`}>{q.term}</p>
       {q.example && <p className="mt-2 leading-relaxed whitespace-pre-line text-slate-700">{q.example}</p>}
     </>
   )
@@ -233,7 +233,7 @@ function ChoiceQuestion({ q, result, onAnswer, onNext, isLast }: QuestionProps) 
       <div
         role="radiogroup"
         aria-label={isCulture(q) ? 'Réponses proposées' : 'Définitions proposées'}
-        className={isCulture(q) ? 'grid gap-2.5 sm:grid-cols-2' : 'space-y-2.5'}
+        className={isCulture(q) && q.options.every((o) => o.text.length <= 40) ? 'grid gap-2.5 sm:grid-cols-2' : 'space-y-2.5'}
       >
         {q.options.map((o, i) => {
           const isCorrect = i === q.correctIndex

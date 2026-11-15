@@ -433,7 +433,7 @@ function WordDetailDialog({ wordId, onClose }: { wordId: string | null; onClose:
               </section>
               <section>
                 <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted uppercase">Réponse</h3>
-                <p className="text-xl font-bold tracking-tight break-words">{word.term}</p>
+                <p className={`font-bold tracking-tight break-words whitespace-pre-line ${word.term.length > 60 ? 'text-base leading-relaxed' : 'text-xl'}`}>{word.term}</p>
                 {!!word.alternates?.length && <p className="mt-1 text-sm text-muted">Aussi accepté : {word.alternates.join(', ')}</p>}
               </section>
             </>

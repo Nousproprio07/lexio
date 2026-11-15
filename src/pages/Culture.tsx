@@ -175,7 +175,7 @@ function QuestionCard({ word, category, status, onOpen }: { word: Word; category
         </div>
       )}
       <div className="flex flex-1 flex-col p-3">
-        <h3 className="font-semibold break-words">
+        <h3 className="line-clamp-3 font-semibold break-words">
           {/* le bouton couvre toute la carte pour ouvrir la fiche */}
           <button
             type="button"

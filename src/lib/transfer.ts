@@ -6,7 +6,8 @@ import { textKey } from './normalize'
 
 type RestoredProgress = Omit<WordProgress, 'wordId'>
 
-export const LIMITS = { term: 120, definition: 2000, example: 1000, category: 60 }
+/** `answer` : réponse d'une question de culture générale (peut être une phrase entière). */
+export const LIMITS = { term: 120, answer: 1000, definition: 2000, example: 1000, category: 60 }
 
 export interface ImportRow {
   term: string
@@ -98,7 +99,7 @@ const HEADER_ALIASES: Record<keyof RawRow, string[]> = {
 
 type RawRow = Partial<Record<'term' | 'definition' | 'example' | 'category', unknown>>
 
-function validateRow(raw: RawRow, line: number, issues: ImportIssue[]): ImportRow | null {
+function validateRow(raw: RawRow, line: number, issues: ImportIssue[], maxTerm = LIMITS.term): ImportRow | null {
   const str = (v: unknown) => (typeof v === 'string' ? v.trim() : v == null ? '' : null)
   const term = str(raw.term)
   const definition = str(raw.definition)
@@ -110,7 +111,7 @@ function validateRow(raw: RawRow, line: number, issues: ImportIssue[]): ImportRo
   }
   if (!term) return issues.push({ line, message: 'mot manquant' }), null
   if (!definition) return issues.push({ line, message: `définition manquante pour « ${term} »` }), null
-  if (term.length > LIMITS.term) return issues.push({ line, message: `mot trop long (${LIMITS.term} caractères max.)` }), null
+  if (term.length > maxTerm) return issues.push({ line, message: `${maxTerm === LIMITS.term ? 'mot' : 'réponse'} trop long${maxTerm === LIMITS.term ? '' : 'ue'} (${maxTerm} caractères max.)` }), null
   if (definition.length > LIMITS.definition)
     return issues.push({ line, message: `définition trop longue pour « ${term} »` }), null
   if (example.length > LIMITS.example) return issues.push({ line, message: `exemple trop long pour « ${term} »` }), null
@@ -236,6 +237,7 @@ export function parseJsonImport(text: string): ImportParseResult {
       },
       i + 1,
       issues,
+      o.kind === 'question' ? LIMITS.answer : LIMITS.term,
     )
     if (!row) return
     if (o.kind === 'question') {

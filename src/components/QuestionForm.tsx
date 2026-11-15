@@ -105,7 +105,7 @@ export function QuestionFormDialog({
   const duplicate = draft.term && draft.definition && !form.image ? findDuplicate(draft, word?.id) : undefined
   const errors = {
     question: !draft.definition ? 'Indiquez la question.' : draft.definition.length > LIMITS.definition ? `${LIMITS.definition} caractères maximum.` : null,
-    answer: !draft.term ? 'Indiquez la bonne réponse.' : draft.term.length > LIMITS.term ? `${LIMITS.term} caractères maximum.` : null,
+    answer: !draft.term ? 'Indiquez la bonne réponse.' : draft.term.length > LIMITS.answer ? `${LIMITS.answer} caractères maximum.` : null,
     alternates: form.alternates.length > LIMITS.example ? `${LIMITS.example} caractères maximum.` : null,
     category: (draft.categoryName?.length ?? 0) > LIMITS.category ? `${LIMITS.category} caractères maximum.` : null,
     example: (draft.example?.length ?? 0) > LIMITS.example ? `${LIMITS.example} caractères maximum.` : null,
@@ -291,9 +291,10 @@ export function QuestionFormDialog({
 
         <Field label="Bonne réponse" error={show(errors.answer)} htmlFor="qf-answer">
           <div className="flex gap-2">
-            <input
+            <textarea
               id="qf-answer"
-              className="field text-[17px] font-semibold"
+              rows={form.answer.length > 60 ? 4 : 1}
+              className="field min-h-12 resize-y text-[17px] leading-snug font-semibold"
               value={form.answer}
               onChange={set('answer')}
               placeholder="Ex. Claude Monet"
